@@ -1,0 +1,91 @@
+---
+title: "Get Compliance Score"
+api: "GET /api/compliance/score"
+description: "Retrieve compliance score breakdown by severity and rule type for a specific scan"
+---
+
+Returns the compliance score, violation statistics, and detailed breakdowns by severity and rule type for a given scan. Also includes score history trend data from the `scans.score_history` JSONB field.
+
+## Query Parameters
+
+<ParamField query="scan_id" type="string" required>
+  The unique identifier of the scan to retrieve the compliance score for
+</ParamField>
+
+## Response
+
+<ResponseField name="score" type="number">
+  Overall compliance score for the scan (0-100)
+</ResponseField>
+
+<ResponseField name="total_violations" type="number">
+  Total number of violations detected in the scan (includes all statuses)
+</ResponseField>
+
+<ResponseField name="open_violations" type="number">
+  Number of violations that are still open (not resolved or marked as false positive)
+</ResponseField>
+
+<ResponseField name="resolved_violations" type="number">
+  Number of violations that have been resolved (approved or marked as false positive)
+</ResponseField>
+
+<ResponseField name="false_positives" type="number">
+  Number of violations marked as false positives
+</ResponseField>
+
+<ResponseField name="by_severity" type="object">
+  Breakdown of active violations by severity level
+  <ResponseField name="CRITICAL" type="number">
+    Number of active critical severity violations
+  </ResponseField>
+  <ResponseField name="HIGH" type="number">
+    Number of active high severity violations
+  </ResponseField>
+  <ResponseField name="MEDIUM" type="number">
+    Number of active medium severity violations
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="by_rule_type" type="object">
+  Breakdown of active violations grouped by rule ID. Keys are rule IDs, values are violation counts.
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code: `VALIDATION_ERROR`, `NOT_FOUND`, or `INTERNAL_ERROR`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<RequestExample>
+```bash
+curl -X GET "https://api.example.com/api/compliance/score?scan_id=abc123" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "score": 85,
+  "total_violations": 42,
+  "open_violations": 15,
+  "resolved_violations": 27,
+  "false_positives": 5,
+  "by_severity": {
+    "CRITICAL": 3,
+    "HIGH": 8,
+    "MEDIUM": 4
+  },
+  "by_rule_type": {
+    "AML_HIGH_RISK_COUNTRY": 5,
+    "AML_STRUCTURING": 7,
+    "KYC_MISSING_INFO": 3
+  }
+}
+```
+</ResponseExample>

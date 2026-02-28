@@ -1,0 +1,154 @@
+---
+title: "Export Compliance Report"
+api: "GET /api/export"
+description: "Export a full compliance report as JSON including scan metadata, violations, rules, and scores"
+---
+
+Exports a comprehensive compliance report for a specific scan or the latest scan. The report includes complete scan metadata, all violations with details, review history, policy information, and summary statistics.
+
+## Query Parameters
+
+<ParamField query="scan_id" type="string">
+  The unique identifier of the scan to export. If not provided, exports the latest scan for the authenticated user.
+</ParamField>
+
+<ParamField query="format" type="string" default="json">
+  Export format. Currently only `json` is supported.
+</ParamField>
+
+## Response
+
+<ResponseField name="report" type="object">
+  The complete compliance report object
+  
+  <ResponseField name="generated_at" type="string">
+    ISO 8601 timestamp of when the report was generated
+  </ResponseField>
+  
+  <ResponseField name="policy" type="object">
+    Policy information associated with the scan
+    <ResponseField name="id" type="string">
+      Policy unique identifier
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Policy name
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="scan" type="object">
+    Scan metadata
+    <ResponseField name="id" type="string">
+      Scan unique identifier
+    </ResponseField>
+    <ResponseField name="score" type="number">
+      Compliance score (0-100)
+    </ResponseField>
+    <ResponseField name="violation_count" type="number">
+      Total number of violations detected
+    </ResponseField>
+    <ResponseField name="scan_date" type="string">
+      ISO 8601 timestamp of when the scan was created
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="violations" type="array">
+    Array of all violation objects with complete details including severity, rule_id, record_id, status, and review information
+  </ResponseField>
+  
+  <ResponseField name="reviews" type="array">
+    Array of review history objects
+    <ResponseField name="violation_id" type="string">
+      ID of the reviewed violation
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Review status (e.g., approved, false_positive)
+    </ResponseField>
+    <ResponseField name="reviewer" type="string">
+      ID of the user who reviewed the violation
+    </ResponseField>
+    <ResponseField name="note" type="string">
+      Optional review note
+    </ResponseField>
+    <ResponseField name="timestamp" type="string">
+      ISO 8601 timestamp of the review
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="summary" type="object">
+    Summary statistics for the report
+    <ResponseField name="total_violations" type="number">
+      Total number of violations
+    </ResponseField>
+    <ResponseField name="critical_severity" type="number">
+      Number of critical severity violations
+    </ResponseField>
+    <ResponseField name="high_severity" type="number">
+      Number of high severity violations
+    </ResponseField>
+    <ResponseField name="medium_severity" type="number">
+      Number of medium severity violations
+    </ResponseField>
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code: `NOT_FOUND`, `UNAUTHORIZED`, or `INTERNAL_ERROR`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<RequestExample>
+```bash
+curl -X GET "https://api.example.com/api/export?scan_id=abc123&format=json" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "report": {
+    "generated_at": "2026-02-28T10:30:00.000Z",
+    "policy": {
+      "id": "policy_123",
+      "name": "AML Standard Policy"
+    },
+    "scan": {
+      "id": "abc123",
+      "score": 85,
+      "violation_count": 42,
+      "scan_date": "2026-02-27T15:00:00.000Z"
+    },
+    "violations": [
+      {
+        "id": "viol_001",
+        "rule_id": "AML_HIGH_RISK_COUNTRY",
+        "severity": "HIGH",
+        "record_id": "rec_456",
+        "status": "open",
+        "description": "Transaction with high-risk country"
+      }
+    ],
+    "reviews": [
+      {
+        "violation_id": "viol_002",
+        "status": "false_positive",
+        "reviewer": "user_789",
+        "note": "Verified legitimate transaction",
+        "timestamp": "2026-02-28T09:15:00.000Z"
+      }
+    ],
+    "summary": {
+      "total_violations": 42,
+      "critical_severity": 5,
+      "high_severity": 15,
+      "medium_severity": 22
+    }
+  }
+}
+```
+</ResponseExample>

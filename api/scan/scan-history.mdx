@@ -1,0 +1,249 @@
+---
+title: "Scan History"
+api: "GET /api/scan/history"
+description: "Retrieve all completed scans for the authenticated user"
+---
+
+## Overview
+
+Fetch a list of all completed compliance scans for the current user, ordered by creation date (most recent first). Each scan includes delta analysis showing new and resolved violations compared to the previous scan for the same policy.
+
+This endpoint is useful for:
+- Viewing historical compliance trends
+- Comparing scans over time
+- Identifying recurring violations
+- Tracking compliance score improvements
+
+## Response
+
+<ResponseField name="scans" type="array" required>
+  Array of completed scan summaries
+  
+  <Expandable title="Scan Item">
+    <ResponseField name="id" type="string" required>
+      Unique scan identifier
+    </ResponseField>
+    
+    <ResponseField name="policy_id" type="string" required>
+      The policy used for this scan
+    </ResponseField>
+    
+    <ResponseField name="score" type="number" required>
+      Compliance score from 0-100
+    </ResponseField>
+    
+    <ResponseField name="violation_count" type="number" required>
+      Total violations detected in this scan
+    </ResponseField>
+    
+    <ResponseField name="new_violations" type="number" required>
+      Number of violations that are new compared to the previous scan for this policy
+    </ResponseField>
+    
+    <ResponseField name="resolved_violations" type="number" required>
+      Number of violations from the previous scan that no longer appear
+    </ResponseField>
+    
+    <ResponseField name="unchanged_count" type="number" required>
+      Number of violations that appear in both this scan and the previous scan
+    </ResponseField>
+    
+    <ResponseField name="status" type="string" required>
+      Scan status. Always `"completed"` in history results
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string" required>
+      ISO 8601 timestamp when the scan was created
+    </ResponseField>
+    
+    <ResponseField name="completed_at" type="string" required>
+      ISO 8601 timestamp when the scan completed
+    </ResponseField>
+    
+    <ResponseField name="audit_name" type="string">
+      Human-readable audit name if provided during scan creation
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Response
+
+```json
+{
+  "scans": [
+    {
+      "id": "abc12345-def6-7890-ghij-klmnopqrstuv",
+      "policy_id": "550e8400-e29b-41d4-a716-446655440000",
+      "score": 87.5,
+      "violation_count": 23,
+      "new_violations": 5,
+      "resolved_violations": 12,
+      "unchanged_count": 18,
+      "status": "completed",
+      "created_at": "2024-01-15T10:30:00Z",
+      "completed_at": "2024-01-15T10:30:04Z",
+      "audit_name": "Q1 2024 Compliance Audit"
+    },
+    {
+      "id": "prev1234-5678-90ab-cdef-ghijklmnopqr",
+      "policy_id": "550e8400-e29b-41d4-a716-446655440000",
+      "score": 82.3,
+      "violation_count": 30,
+      "new_violations": 8,
+      "resolved_violations": 3,
+      "unchanged_count": 22,
+      "status": "completed",
+      "created_at": "2023-12-15T14:20:00Z",
+      "completed_at": "2023-12-15T14:20:03Z",
+      "audit_name": "Q4 2023 Compliance Audit"
+    },
+    {
+      "id": "scan5678-90ab-cdef-ghij-klmnopqrstuv",
+      "policy_id": "660e9511-f30c-52e5-b827-557766551111",
+      "score": 95.2,
+      "violation_count": 7,
+      "new_violations": 0,
+      "resolved_violations": 15,
+      "unchanged_count": 7,
+      "status": "completed",
+      "created_at": "2023-11-20T09:15:00Z",
+      "completed_at": "2023-11-20T09:15:02Z",
+      "audit_name": null
+    }
+  ]
+}
+```
+
+## Filtering and Sorting
+
+### Current Behavior
+
+- **Status Filter**: Only `completed` scans are returned
+- **User Filter**: Automatically filtered to the authenticated user's scans
+- **Sort Order**: Ordered by `created_at` descending (most recent first)
+
+### Future Enhancements
+
+The following query parameters are planned but not yet implemented:
+
+<ParamField query="policy_id" type="string">
+  Filter scans by specific policy ID
+</ParamField>
+
+<ParamField query="audit_name" type="string">
+  Filter scans by audit name (partial match)
+</ParamField>
+
+<ParamField query="from_date" type="string">
+  ISO 8601 date - only return scans created after this date
+</ParamField>
+
+<ParamField query="to_date" type="string">
+  ISO 8601 date - only return scans created before this date
+</ParamField>
+
+<ParamField query="min_score" type="number">
+  Only return scans with compliance score greater than or equal to this value
+</ParamField>
+
+<ParamField query="max_score" type="number">
+  Only return scans with compliance score less than or equal to this value
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort field. Options: `created_at`, `score`, `violation_count`. Default: `created_at`
+</ParamField>
+
+<ParamField query="order" type="string">
+  Sort direction. Options: `asc`, `desc`. Default: `desc`
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of scans to return. Default: 100
+</ParamField>
+
+<ParamField query="offset" type="number">
+  Number of scans to skip for pagination. Default: 0
+</ParamField>
+
+## Error Responses
+
+### 401 Unauthorized
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Authentication required"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to fetch scan history"
+}
+```
+
+## Delta Calculation
+
+For each scan in the history, the endpoint calculates delta metrics by:
+
+1. Finding the previous completed scan for the same policy (ordered by `created_at`)
+2. Fetching violations for both scans
+3. Creating violation signatures using `rule_id:account`
+4. Comparing signature sets to identify:
+   - **New violations** - Present in current scan but not previous
+   - **Resolved violations** - Present in previous scan but not current
+   - **Unchanged violations** - Present in both scans
+
+If no previous scan exists for a policy, delta values will be:
+- `new_violations`: equals `violation_count`
+- `resolved_violations`: `0`
+- `unchanged_count`: `0`
+
+## Use Cases
+
+### Compliance Trend Dashboard
+
+Fetch scan history to visualize compliance score over time:
+
+```javascript
+const { scans } = await fetch('/api/scan/history').then(r => r.json());
+
+// Group by policy
+const byPolicy = scans.reduce((acc, scan) => {
+  if (!acc[scan.policy_id]) acc[scan.policy_id] = [];
+  acc[scan.policy_id].push(scan);
+  return acc;
+}, {});
+
+// Chart compliance scores over time
+Object.entries(byPolicy).forEach(([policyId, policScans]) => {
+  const scores = policyScans.map(s => ({
+    date: s.created_at,
+    score: s.score
+  }));
+  renderChart(policyId, scores);
+});
+```
+
+### Identify Recurring Violations
+
+Find scans where violations remain unchanged:
+
+```javascript
+const { scans } = await fetch('/api/scan/history').then(r => r.json());
+
+const withPersistentIssues = scans.filter(s => 
+  s.unchanged_count > 0 && s.unchanged_count / s.violation_count > 0.5
+);
+
+console.log(`Found ${withPersistentIssues.length} scans with 50%+ persistent violations`);
+```
+
+## Related Endpoints
+
+- [Run Scan](/api/scan/run-scan) - Trigger a new compliance scan
+- [Get Scan Status](/api/scan/get-status) - Get detailed scan results

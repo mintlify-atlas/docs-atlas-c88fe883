@@ -1,0 +1,353 @@
+---
+title: 'Rule Types'
+description: 'Understand WINDOWED vs SINGLE-TX rule types and when to use each'
+---
+
+## Overview
+
+Yggdrasil supports two execution modes for rules:
+
+1. **SINGLE-TX**: Evaluate conditions on each individual record
+2. **WINDOWED**: Aggregate records by account and evaluate within time windows
+
+The engine routes rules based on their `type` field.
+
+## Rule Routing
+
+```typescript
+// From in-memory-backend.ts:94
+const isWindowed = (WINDOWED_RULE_TYPES as readonly string[]).includes(rule.type);
+```
+
+```typescript
+// From types.ts:171-181
+export const WINDOWED_RULE_TYPES = [
+    'structuring',
+    'velocity',
+    'velocity_limit',
+    'sar_velocity',
+    'ctr_aggregation',
+    'aggregation',
+    'sub_threshold_velocity',
+    'dormant_reactivation',
+    'round_amount',
+] as const;
+```
+
+All other types route to **single-transaction** execution.
+
+## SINGLE-TX Rules
+
+### When to Use
+
+- **Threshold checks**: Amount > $10,000
+- **Field existence**: Missing required fields
+- **Pattern matching**: Email format validation
+- **Cross-field validation**: Balance mismatches
+- **Compliance flags**: GDPR consent checks
+
+### Example: CTR Threshold
+
+```json
+{
+  "rule_id": "CTR_THRESHOLD",
+  "type": "single_transaction",
+  "threshold": 10000,
+  "conditions": {
+    "AND": [
+      { "field": "amount", "operator": ">=", "value": 10000 },
+      { "field": "transaction_type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+    ]
+  }
+}
+```
+
+### Execution Path
+
+```typescript
+// From in-memory-backend.ts:105-118
+private executeSingleTx(
+    rule: Rule,
+    records: NormalizedRecord[]
+): ViolationResult[] {
+    const violations: ViolationResult[] = [];
+
+    for (const record of records) {
+        if (this.checkSingleTxRule(rule, record)) {
+            violations.push(this.createViolation(rule, record));
+        }
+    }
+
+    return violations;
+}
+```
+
+Each record is evaluated independently using the condition evaluator.
+
+## WINDOWED Rules
+
+### When to Use
+
+- **Aggregations**: Sum of transactions to same recipient
+- **Velocity limits**: Transaction frequency checks
+- **Structuring detection**: Multiple sub-threshold transactions
+- **Dormant reactivation**: Account inactivity patterns
+- **Round amount patterns**: Repeated round-dollar amounts
+
+### Common Parameters
+
+- **`time_window`**: Window size in hours (e.g., 24 for daily)
+- **`threshold`**: Aggregate threshold or count limit
+- **`group_by_field`**: Field to group by (default: `recipient`)
+- **`aggregation_field`**: Field to aggregate (default: `amount`)
+- **`aggregation_function`**: `sum`, `count`, `avg`, `max`, `min`
+
+### Example: CTR Aggregation
+
+```json
+{
+  "rule_id": "CTR_AGGREGATION",
+  "type": "aggregation",
+  "threshold": 10000,
+  "time_window": 24,
+  "group_by_field": "recipient",
+  "aggregation_field": "amount",
+  "aggregation_function": "sum",
+  "conditions": null
+}
+```
+
+**Triggers when**: The sum of amounts to the same recipient within 24 hours exceeds $10,000.
+
+### Example: Structuring Detection
+
+```json
+{
+  "rule_id": "STRUCTURING_PATTERN",
+  "type": "structuring",
+  "threshold": 5,
+  "time_window": 24,
+  "conditions": {
+    "AND": [
+      { "field": "amount", "operator": ">=", "value": 8000 },
+      { "field": "amount", "operator": "<", "value": 10000 }
+    ]
+  }
+}
+```
+
+**Triggers when**: An account has 5+ transactions in the $8K–$10K range within 24 hours.
+
+## WINDOWED Rule Subtypes
+
+### 1. Aggregation
+
+**Types**: `aggregation`, `ctr_aggregation`
+
+Groups records by a field (e.g., `recipient`) and aggregates values within a time window.
+
+```typescript
+// From in-memory-backend.ts:321-369
+private checkAggregation(
+    rule: Rule,
+    account: string,
+    records: NormalizedRecord[],
+    scale: number
+): ViolationResult[] {
+    const window = rule.time_window || 24;
+    const groupBy = rule.group_by_field || 'recipient';
+    const aggField = rule.aggregation_field || 'amount';
+    const aggFunc = rule.aggregation_function || 'sum';
+    const threshold = rule.threshold || 0;
+
+    // Group by (groupByField, window)
+    const windows = new Map<string, NormalizedRecord[]>();
+    for (const r of records) {
+        const timeKey = getWindowKey(r.step, window, scale);
+        const groupVal = r[groupBy] || 'unknown';
+        const key = `${groupVal}_${timeKey}`;
+        if (!windows.has(key)) windows.set(key, []);
+        windows.get(key)!.push(r);
+    }
+
+    for (const [key, txns] of windows) {
+        let actualValue = 0;
+        const values = txns.map(t => t[aggField] as number).filter(v => typeof v === 'number');
+
+        if (aggFunc === 'sum') actualValue = values.reduce((a, b) => a + b, 0);
+        else if (aggFunc === 'count') actualValue = values.length;
+        else if (aggFunc === 'avg') actualValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+        // ...
+    }
+}
+```
+
+### 2. Velocity
+
+**Types**: `velocity`, `velocity_limit`, `sar_velocity`, `sub_threshold_velocity`, `structuring`
+
+Counts transaction frequency or aggregates volume within a window.
+
+```typescript
+// From in-memory-backend.ts:372-422
+private checkVelocity(
+    rule: Rule,
+    account: string,
+    records: NormalizedRecord[],
+    scale: number
+): ViolationResult[] {
+    const window = rule.time_window || 24;
+    const threshold = rule.threshold || 1;
+    
+    // Special filter for structuring detection
+    let filtered = records;
+    if (rule.rule_id === 'STRUCTURING_PATTERN' || rule.rule_id === 'SUB_THRESHOLD_VELOCITY') {
+        filtered = preFilterForSubThreshold(records).filter(r => r.amount < 10000);
+    }
+
+    const windows = new Map<number, NormalizedRecord[]>();
+    for (const r of filtered) {
+        const wk = getWindowKey(r.step, window, scale);
+        if (!windows.has(wk)) windows.set(wk, []);
+        windows.get(wk)!.push(r);
+    }
+
+    for (const [, txns] of windows) {
+        const count = txns.length;
+        const sum = txns.reduce((s, r) => s + r.amount, 0);
+        
+        let triggered = false;
+        let actualValue = count;
+
+        if (rule.type === 'velocity' || rule.type === 'velocity_limit') {
+            triggered = count >= threshold;
+            actualValue = count;
+        } else if (rule.type === 'sar_velocity') {
+            triggered = sum > (rule.threshold || 25000);
+            actualValue = sum;
+        }
+        // ...
+    }
+}
+```
+
+### 3. Dormant Reactivation
+
+**Type**: `dormant_reactivation`
+
+Detects accounts with 90+ day inactivity followed by large transactions.
+
+```typescript
+// From in-memory-backend.ts:427-461
+private checkDormantReactivation(
+    rule: Rule,
+    account: string,
+    records: NormalizedRecord[],
+    scale: number
+): ViolationResult[] {
+    if (records.length < 2) return [];
+    const violations: ViolationResult[] = [];
+
+    // Sort by step
+    const sorted = [...records].sort((a, b) => a.step - b.step);
+
+    // Find gaps: look for 90-step dormancy (scaled)
+    const dormancyThreshold = 90 * (scale === 24 ? 1 : scale);
+    const reactivationWindow = 30 * (scale === 24 ? 1 : scale);
+
+    for (let i = 1; i < sorted.length; i++) {
+        const gap = sorted[i].step - sorted[i - 1].step;
+        if (gap >= dormancyThreshold && sorted[i].amount > 5000) {
+            // Create violation
+        }
+    }
+
+    return violations;
+}
+```
+
+### 4. Round Amount Pattern
+
+**Type**: `round_amount`
+
+Detects 3+ round-dollar transactions (divisible by 1,000) within 30 days.
+
+```typescript
+// From in-memory-backend.ts:50-52
+function isRoundAmount(x: number): boolean {
+    return x % 1000 === 0;
+}
+```
+
+```typescript
+// From in-memory-backend.ts:467-500
+private checkRoundAmount(
+    rule: Rule,
+    account: string,
+    records: NormalizedRecord[],
+    scale: number
+): ViolationResult[] {
+    const roundRecords = records.filter((r) => isRoundAmount(r.amount));
+    if (roundRecords.length < 3) return [];
+
+    const violations: ViolationResult[] = [];
+
+    // Window: 30 days = 720 hours
+    const windowHours = 720;
+
+    const windows = new Map<number, NormalizedRecord[]>();
+    for (const r of roundRecords) {
+        const wk = getWindowKey(r.step, windowHours, scale);
+        if (!windows.has(wk)) windows.set(wk, []);
+        windows.get(wk)!.push(r);
+    }
+
+    for (const [, txns] of windows) {
+        if (txns.length >= 3) {
+            violations.push(
+                this.createWindowedViolation(rule, account, txns, {
+                    actual_value: txns.length,
+                    threshold: 3,
+                })
+            );
+        }
+    }
+
+    return violations;
+}
+```
+
+## Execution Flow Comparison
+
+| Aspect | SINGLE-TX | WINDOWED |
+|--------|-----------|----------|
+| **Grouping** | No grouping | Group by account |
+| **Time** | Evaluated per record | Evaluated per window |
+| **Violations** | One per matching record | One per matching window |
+| **Evidence** | Single record | Multiple records |
+| **Use Cases** | Thresholds, patterns | Aggregations, velocity |
+
+## Choosing the Right Type
+
+### Use SINGLE-TX when:
+- ✅ You need to check individual record values
+- ✅ The rule is about field existence or format
+- ✅ No aggregation is needed
+- ✅ Time windows are irrelevant
+
+### Use WINDOWED when:
+- ✅ You need to aggregate multiple transactions
+- ✅ The rule is about frequency or velocity
+- ✅ You need to detect patterns across time
+- ✅ The violation requires context from multiple records
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Operators" icon="code" href="/engine/operators">
+    Learn about supported operators
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/engine/architecture">
+    Understand the execution flow
+  </Card>
+</CardGroup>

@@ -1,0 +1,50 @@
+---
+title: Database Overview
+description: Yggdrasil's database architecture using Supabase PostgreSQL with Row-Level Security
+---
+
+## Architecture
+
+Yggdrasil uses **Supabase PostgreSQL** with **Row-Level Security (RLS)** enabled on all tables. Every table is filtered by `auth.uid()` via RLS policies, ensuring that each user only sees their own data.
+
+## Database Relationships
+
+```
+auth.users
+    └── policies (user_id)
+        └── rules (policy_id)
+    └── scans (user_id, policy_id)
+        ├── violations (scan_id)
+        └── pii_findings (scan_id)
+```
+
+## Core Tables
+
+- **policies** — Policy metadata for AML, GDPR, SOC2, or custom PDF policies
+- **rules** — Extracted compliance rules with compound condition logic and Bayesian feedback counters
+- **scans** — Scan execution records with compliance scores and trend tracking
+- **violations** — Detected compliance violations with evidence and explanations
+- **pii_findings** — PII detection results from uploaded datasets
+
+## Row-Level Security
+
+All tables use RLS policies that filter by `auth.uid()`. This means:
+
+- Users can only access their own policies, scans, and violations
+- No cross-user data leakage is possible at the database level
+- RLS policies are enforced at the PostgreSQL level, not in application code
+
+## Storage Strategy
+
+<Info>
+**In-Memory vs. Persistent Storage**
+
+CSV data and column mappings are kept in server memory during the audit flow and are not persisted to the database. Only the final scan results (violations, compliance scores, PII findings) are stored in PostgreSQL.
+</Info>
+
+## Design Rationale
+
+- **JSONB for conditions** — Rules support arbitrarily nested AND/OR logic trees. JSONB allows flexible schema without join overhead.
+- **Score history on scans** — Tracking per-review score changes enables compliance trend visualization without a separate table.
+- **Bayesian counters on rules** — `approved_count` and `false_positive_count` enable the precision formula `(1 + TP) / (2 + TP + FP)` that improves rule confidence over time.
+- **PII findings linked by upload_id** — PII detection runs at upload time (before a scan exists), so findings are initially stored by `upload_id` and linked to `scan_id` after scan completion.

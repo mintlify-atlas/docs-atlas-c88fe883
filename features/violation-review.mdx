@@ -1,0 +1,216 @@
+---
+title: "Violation Review"
+description: "Review compliance violations, approve or dismiss findings, and improve rule accuracy with Bayesian feedback"
+---
+
+After a scan completes, review detected violations to confirm which are true positives and which are false positives.
+
+## Violation Dashboard
+
+The scan results screen shows:
+
+- **Compliance score:** 0-100 (higher is better)
+- **Violation count by severity:**
+  - CRITICAL: Immediate action required
+  - HIGH: Significant risk
+  - MEDIUM: Potential issue
+- **Violations grouped by:**
+  - Rule (which policy requirement)
+  - Account (which entity has violations)
+  - Severity (risk prioritization)
+
+<Steps>
+  <Step title="Select a violation to review">
+    Click any violation row to open the evidence drawer.
+  </Step>
+  
+  <Step title="Examine the evidence">
+    The drawer shows:
+    - **Policy excerpt:** The exact regulatory clause violated
+    - **Evidence grid:** Field values from your data that triggered the rule
+    - **Explanation:** A deterministic summary of which conditions matched
+    - **Confidence score:** 0-1 scale indicating rule quality and historical precision
+  </Step>
+  
+  <Step title="Make a decision">
+    Two options:
+    - **Approve:** Confirms this is a true violation that requires action
+    - **Dismiss:** Marks this as a false positive (incorrect detection)
+  </Step>
+  
+  <Step title="Add notes (optional)">
+    Enter reviewer comments explaining your decision. These notes are stored with the violation for audit trails.
+  </Step>
+</Steps>
+
+## Evidence Components
+
+### Policy Excerpt
+The exact text from your policy document or prebuilt framework that this violation references:
+
+> "Transactions exceeding $10,000 must be reported via Currency Transaction Report (CTR) within 15 days."
+
+Source: **31 CFR § 1010.311**
+
+### Evidence Grid
+Matched field values from the violating record:
+
+| Field | Value |
+|-------|-------|
+| Account | ACC-501234 |
+| Amount | $12,500.00 |
+| Transaction Type | WIRE |
+| Timestamp | 2026-02-15 14:32:00 |
+
+### Explanation
+Deterministic text generated from templates (no LLM calls during scanning):
+
+> "This record violates the CTR threshold rule because the transaction amount ($12,500) exceeds the $10,000 threshold AND the transaction type is WIRE."
+
+<Note>
+  Explanations are reproducible — the same violation will always generate the same explanation text.
+</Note>
+
+## Review Actions
+
+### Approve (True Positive)
+When you approve a violation:
+
+1. Violation status changes to `approved`
+2. Rule's `approved_count` increments by 1
+3. Compliance score is recalculated (may decrease slightly)
+4. Score history logs the approval
+5. Bayesian precision updates: `precision = (1 + TP) / (2 + TP + FP)`
+
+### Dismiss (False Positive)
+When you dismiss a violation:
+
+1. Violation status changes to `false_positive`
+2. Rule's `false_positive_count` increments by 1
+3. Compliance score is recalculated (increases)
+4. Score history logs the dismissal
+5. Bayesian precision decreases for this rule
+
+<Warning>
+  Dismissed violations affect future scans: rules with high false positive rates will receive lower confidence scores.
+</Warning>
+
+## Bayesian Feedback Loop
+
+Yggdrasil uses a **Bayesian precision model** to improve rule accuracy over time.
+
+### How It Works
+
+Each rule tracks:
+- `approved_count`: Number of confirmed true positives (TP)
+- `false_positive_count`: Number of dismissed violations (FP)
+
+Precision formula:
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+This precision score is factored into future violation confidence calculations.
+
+### Example Evolution
+
+**Initial state:** Rule has no review history
+- TP = 0, FP = 0
+- Precision = (1 + 0) / (2 + 0 + 0) = 0.5 (neutral)
+
+**After 5 approvals:**
+- TP = 5, FP = 0
+- Precision = (1 + 5) / (2 + 5 + 0) = 0.857 (high confidence)
+
+**After 3 dismissals:**
+- TP = 5, FP = 3
+- Precision = (1 + 5) / (2 + 5 + 3) = 0.6 (reduced confidence)
+
+<Note>
+  **Your reviews make the system smarter.** Rules that consistently produce false positives will lose confidence, while accurate rules gain it.
+</Note>
+
+## Score History Tracking
+
+Every review action updates the scan's `score_history` array:
+
+```json
+[
+  {
+    "score": 85.2,
+    "timestamp": "2026-02-22T10:00:00Z",
+    "action": "scan_completed",
+    "violation_id": null
+  },
+  {
+    "score": 87.1,
+    "timestamp": "2026-02-22T10:05:00Z",
+    "action": "false_positive",
+    "violation_id": "abc-123"
+  },
+  {
+    "score": 85.8,
+    "timestamp": "2026-02-22T10:12:00Z",
+    "action": "approved",
+    "violation_id": "def-456"
+  }
+]
+```
+
+This enables compliance trend visualization over time.
+
+## Case Grouping
+
+View violations grouped by account/entity:
+
+```
+GET /api/violations/cases?scan_id={scan_id}
+```
+
+Example response:
+```json
+{
+  "cases": [
+    {
+      "account": "ACC-501234",
+      "violation_count": 7,
+      "total_amount": 45000,
+      "severities": { "CRITICAL": 2, "HIGH": 5 },
+      "violations": [ ... ]
+    }
+  ]
+}
+```
+
+Use this view to prioritize accounts with multiple violations.
+
+## Bulk Actions
+
+While reviewing:
+- Filter by severity (CRITICAL, HIGH, MEDIUM)
+- Filter by rule
+- Filter by account
+- Sort by confidence score
+- Sort by amount
+
+<Note>
+  Bulk approve/dismiss is not currently supported — each violation requires individual review for auditability.
+</Note>
+
+## Audit Trail
+
+Every review is tracked:
+- `reviewed_by`: User ID from Supabase Auth
+- `reviewed_at`: Timestamp
+- `review_note`: Optional comment
+- `status`: `pending` → `approved` | `false_positive`
+
+This creates a complete audit trail showing who made each decision and when.
+
+## Next Steps
+
+After reviewing violations:
+
+1. Generate remediation steps for approved violations → [Remediation](/features/remediation)
+2. Export the compliance report with review notes
+3. Run a new scan to verify fixes

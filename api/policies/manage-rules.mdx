@@ -1,0 +1,245 @@
+---
+title: "Manage Policy Rules"
+api: "PATCH/DELETE /api/policies/{id}/rules"
+description: "Toggle rule active status, update rule parameters, or delete rules from a policy"
+---
+
+## Overview
+
+This set of endpoints allows you to manage rules within a policy:
+
+- **PATCH** - Toggle a rule's `is_active` status to enable/disable it
+- **DELETE** - Permanently remove a rule from a policy
+
+Both operations update the policy's `updated_at` timestamp and trigger the dirty flag.
+
+## Authentication
+
+Requires a valid session token. Returns `401 UNAUTHORIZED` if not authenticated.
+
+---
+
+## Toggle Rule Status
+
+**PATCH** `/api/policies/{id}/rules`
+
+Enable or disable a rule without deleting it. Inactive rules are skipped during scans.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the policy containing the rule
+</ParamField>
+
+### Request Body
+
+<ParamField body="rule_id" type="string" required>
+  The `rule_id` of the rule to update (e.g., `STRUCTURING_PATTERN`)
+</ParamField>
+
+<ParamField body="is_active" type="boolean" required>
+  New active state for the rule
+  - `true` - Enable the rule (will be evaluated in scans)
+  - `false` - Disable the rule (will be skipped in scans)
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X PATCH https://yourdomain.com/api/policies/550e8400-e29b-41d4-a716-446655440000/rules \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=your_session_token" \
+  -d '{
+    "rule_id": "STRUCTURING_PATTERN",
+    "is_active": false
+  }'
+```
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Always `true` on successful update
+</ResponseField>
+
+#### Success Response
+
+```json
+{
+  "success": true
+}
+```
+
+### Error Responses
+
+#### 400 Bad Request
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request body",
+  "details": [
+    {
+      "code": "invalid_type",
+      "expected": "boolean",
+      "received": "string",
+      "path": ["is_active"],
+      "message": "Expected boolean, received string"
+    }
+  ]
+}
+```
+
+#### 401 Unauthorized
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Authentication required"
+}
+```
+
+#### 500 Internal Server Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to update rule"
+}
+```
+
+---
+
+## Delete Rule
+
+**DELETE** `/api/policies/{id}/rules?rule_id={rule_id}`
+
+Permanently remove a rule from a policy. This action cannot be undone.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the policy containing the rule
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="rule_id" type="string" required>
+  The `rule_id` of the rule to delete (e.g., `STRUCTURING_PATTERN`)
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X DELETE "https://yourdomain.com/api/policies/550e8400-e29b-41d4-a716-446655440000/rules?rule_id=STRUCTURING_PATTERN" \
+  -H "Cookie: session=your_session_token"
+```
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Always `true` on successful deletion
+</ResponseField>
+
+#### Success Response
+
+```json
+{
+  "success": true
+}
+```
+
+### Error Responses
+
+#### 400 Bad Request
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Missing rule_id query parameter"
+}
+```
+
+#### 401 Unauthorized
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Authentication required"
+}
+```
+
+#### 404 Not Found
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Policy not found"
+}
+```
+
+#### 500 Internal Server Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to delete rule"
+}
+```
+
+---
+
+## Side Effects
+
+Both PATCH and DELETE operations trigger the following side effects:
+
+### Policy Updates
+
+- `updated_at` timestamp is refreshed
+- Policy `dirty` flag is set to `true` (requires rescan)
+
+### Rules Count
+
+- **PATCH**: No change to `rules_count`
+- **DELETE**: Decrements `rules_count` by 1
+
+---
+
+## Use Cases
+
+### Temporarily Disable a Rule
+
+If a rule is generating too many false positives, disable it without losing the configuration:
+
+```bash
+curl -X PATCH .../rules \
+  -d '{ "rule_id": "RAPID_MOVEMENT", "is_active": false }'
+```
+
+### Remove Obsolete Rules
+
+Permanently delete rules that are no longer relevant:
+
+```bash
+curl -X DELETE ".../rules?rule_id=OLD_RULE_ID"
+```
+
+### Bulk Toggle (Multiple Requests)
+
+To enable/disable multiple rules, send parallel PATCH requests:
+
+```bash
+# Disable multiple rules
+curl -X PATCH .../rules -d '{"rule_id":"RULE_1","is_active":false}' &
+curl -X PATCH .../rules -d '{"rule_id":"RULE_2","is_active":false}' &
+wait
+```
+
+---
+
+## Notes
+
+- Rule `rule_id` must match exactly (case-sensitive)
+- Deleted rules cannot be recovered - consider disabling instead
+- The policy's `dirty` flag is set after any modification
+- Inactive rules are completely skipped during scan evaluation
+- Rule modifications do not affect historical scan results

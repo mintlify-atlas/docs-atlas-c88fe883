@@ -1,0 +1,329 @@
+---
+title: 'Confidence Scoring'
+description: 'How violations are ranked by confidence using rule quality, signal specificity, statistical anomaly detection, and Bayesian precision'
+---
+
+## Overview
+
+Every violation receives a **confidence score** (0–1) that combines multiple factors:
+
+1. **Rule Quality**: Structural quality of the rule (threshold defined, conditions present)
+2. **Signal Specificity**: Bonus for compound AND conditions
+3. **Statistical Anomaly**: How unusual the value is vs. dataset distribution
+4. **Bayesian Precision**: Historical accuracy from user reviews
+5. **Criticality Weight**: CRITICAL severity gets a boost
+
+Violations are ranked by confidence before being displayed.
+
+## Confidence Formula
+
+```typescript
+// From rule-executor.ts:65-111
+function calculateConfidence(
+    violation: ViolationResult, 
+    rule: Rule, 
+    metadata?: DatasetMetadata
+): number {
+    const quality = validateRuleQuality(rule);
+    let score = quality.score / 100;
+
+    // 1. Signal Specificity Boost
+    if (rule.conditions && typeof rule.conditions === 'object') {
+        if ('AND' in rule.conditions && Array.isArray(rule.conditions.AND)) {
+            // More signals = higher confidence
+            score += rule.conditions.AND.length * 0.05;
+        }
+    }
+
+    // 2. Statistical Anomaly Detection (Simulated ML)
+    if (metadata && violation.amount) {
+        const stats = metadata.columnStats['amount'];
+        
+        if (stats && stats.type === 'numeric' && stats.mean) {
+            // How many times larger than mean?
+            const ratioToMean = violation.amount / stats.mean;
+            
+            if (ratioToMean > 10) score += 0.2; // Extreme outlier
+            else if (ratioToMean > 5) score += 0.1;
+            else if (ratioToMean < 0.1) score += 0.05;
+        }
+    }
+
+    // 3. Bayesian Historical Precision (Feedback Loop)
+    // Formula: (1 + TP) / (2 + TP + FP)
+    const tp = rule.approved_count || 0;
+    const fp = rule.false_positive_count || 0;
+    const historicalPrecision = (1 + tp) / (2 + tp + fp);
+    
+    // Blend history with rule quality based on review count
+    const reviewCount = tp + fp;
+    const historyWeight = Math.min(0.7, reviewCount / 20); // Cap at 70%
+    score = (score * (1 - historyWeight)) + (historicalPrecision * historyWeight);
+
+    // 4. Criticality weighting
+    if (rule.severity === 'CRITICAL') score += 0.1;
+
+    return Math.max(0, Math.min(1, score));
+}
+```
+
+## Component Breakdown
+
+### 1. Rule Quality (Base Score)
+
+The base score comes from the rule quality validator:
+
+```typescript
+const quality = validateRuleQuality(rule);
+let score = quality.score / 100;
+```
+
+Rule quality checks:
+- ✅ Has a threshold defined
+- ✅ Has conditions defined
+- ✅ Has a policy excerpt
+- ✅ Has a description
+
+A well-formed rule starts with a score of **0.70–0.85**.
+
+### 2. Signal Specificity Boost
+
+Rules with multiple `AND` conditions get a bonus:
+
+```typescript
+if (rule.conditions && typeof rule.conditions === 'object') {
+    if ('AND' in rule.conditions && Array.isArray(rule.conditions.AND)) {
+        // More signals = higher confidence
+        score += rule.conditions.AND.length * 0.05;
+    }
+}
+```
+
+**Example**: A rule with 3 AND conditions gets `+0.15` to its score.
+
+#### Signal Specificity Framework
+
+Yggdrasil enforces a **minimum specificity threshold of 2.0** for PDF-extracted rules. This prevents single-threshold rules from firing:
+
+```
+Specificity = sum of signal weights
+
+Signal Types:
+- Behavioral (amount threshold, transaction type): 1.0 each
+- Temporal (time window, velocity): 0.8 each
+- Relational (recipient, account pairs): 0.6 each
+
+Minimum: 2.0 (e.g., amount + type, or amount + time window)
+```
+
+This design minimizes false positives by requiring rules to combine multiple signals.
+
+### 3. Statistical Anomaly Detection
+
+If dataset metadata is available, the engine compares the violation amount to the dataset mean:
+
+```typescript
+if (metadata && violation.amount) {
+    const stats = metadata.columnStats['amount'];
+    
+    if (stats && stats.type === 'numeric' && stats.mean) {
+        const ratioToMean = violation.amount / stats.mean;
+        
+        if (ratioToMean > 10) score += 0.2; // Extreme outlier
+        else if (ratioToMean > 5) score += 0.1;
+        else if (ratioToMean < 0.1) score += 0.05;
+    }
+}
+```
+
+**Example**:
+- Dataset mean: $1,000
+- Violation amount: $15,000
+- Ratio: 15x → **+0.2 boost** (extreme outlier)
+
+### 4. Bayesian Historical Precision
+
+The most important component: **learning from user feedback**.
+
+```typescript
+const tp = rule.approved_count || 0;
+const fp = rule.false_positive_count || 0;
+const historicalPrecision = (1 + tp) / (2 + tp + fp);
+
+const reviewCount = tp + fp;
+const historyWeight = Math.min(0.7, reviewCount / 20);
+score = (score * (1 - historyWeight)) + (historicalPrecision * historyWeight);
+```
+
+#### Formula Breakdown
+
+**Precision formula**: `(1 + TP) / (2 + TP + FP)`
+
+- **TP**: True positives (user approved)
+- **FP**: False positives (user dismissed)
+- **Priors**: `+1` to numerator, `+2` to denominator (Bayesian smoothing)
+
+This gives new rules a starting precision of **0.5** before any reviews.
+
+#### History Weight
+
+```typescript
+const historyWeight = Math.min(0.7, reviewCount / 20);
+```
+
+- **0 reviews**: History weight = 0% (use rule quality only)
+- **10 reviews**: History weight = 50%
+- **20+ reviews**: History weight = 70% (cap)
+
+As the rule accumulates reviews, historical precision **dominates** the score.
+
+#### Example: Rule Improvement
+
+**Initial state** (0 reviews):
+```
+TP = 0, FP = 0
+Precision = (1 + 0) / (2 + 0 + 0) = 0.5
+Weight = 0%
+Confidence = rule_quality_score (e.g., 0.75)
+```
+
+**After 5 approvals, 1 dismissal**:
+```
+TP = 5, FP = 1
+Precision = (1 + 5) / (2 + 5 + 1) = 0.75
+Weight = 6/20 = 30%
+Confidence = 0.75 * 0.70 + 0.75 * 0.30 = 0.75
+```
+
+**After 20 approvals, 2 dismissals**:
+```
+TP = 20, FP = 2
+Precision = (1 + 20) / (2 + 20 + 2) = 0.875
+Weight = 70% (capped)
+Confidence = 0.75 * 0.30 + 0.875 * 0.70 = 0.84
+```
+
+The rule's confidence **increases** as it proves accurate.
+
+**After 5 approvals, 15 dismissals** (low precision):
+```
+TP = 5, FP = 15
+Precision = (1 + 5) / (2 + 5 + 15) = 0.27
+Weight = 70%
+Confidence = 0.75 * 0.30 + 0.27 * 0.70 = 0.41
+```
+
+The rule's confidence **decreases** as it produces false positives.
+
+### 5. Criticality Weight
+
+CRITICAL severity rules get a final boost:
+
+```typescript
+if (rule.severity === 'CRITICAL') score += 0.1;
+```
+
+This ensures critical violations are prioritized even if other factors are lower.
+
+## Score Clamping
+
+```typescript
+return Math.max(0, Math.min(1, score));
+```
+
+Final scores are clamped to `[0, 1]` range.
+
+## Ranking Violations
+
+After scoring, violations are sorted by confidence:
+
+```typescript
+// From rule-executor.ts:189-192
+const rankedViolations = violations.sort((a, b) =>
+    (b.confidence || 0) - (a.confidence || 0)
+);
+```
+
+Highest confidence violations appear first in the dashboard.
+
+## Example Score Calculation
+
+**Rule**: CTR Structuring Pattern
+- **Rule quality**: 0.80 (well-formed)
+- **AND conditions**: 3 → +0.15
+- **Anomaly detection**: 12x mean → +0.2
+- **Bayesian precision**: 15 TP, 3 FP → 0.84, weight 70%
+- **Criticality**: CRITICAL → +0.1
+
+```
+Base = 0.80 / 100 = 0.008 (wait, this is wrong in the example; it should be 0.80)
+
+Actual formula:
+score = 0.80 (base)
+score += 0.15 (signals)
+score += 0.2 (anomaly)
+score = 1.15
+
+Bayesian blend:
+historyWeight = min(0.7, 18/20) = 0.7
+score = 1.15 * (1 - 0.7) + 0.84 * 0.7
+score = 0.345 + 0.588 = 0.933
+
+score += 0.1 (critical)
+score = 1.033
+
+Clamped: min(1.0, 1.033) = 1.0
+```
+
+**Final confidence**: **1.0** (maximum)
+
+## Confidence Tiers
+
+| Range | Interpretation |
+|-------|----------------|
+| 0.80–1.0 | **High confidence** — Very likely true positive |
+| 0.60–0.79 | **Medium confidence** — Needs review |
+| 0.40–0.59 | **Low confidence** — Likely needs tuning |
+| 0.00–0.39 | **Very low** — Rule may be too noisy |
+
+## Impact on Compliance Score
+
+Confidence scores **do not** affect the compliance score calculation. The compliance score is based on:
+
+```
+score = 100 × (1 - weighted_violations / total_rows)
+```
+
+Where weights are:
+- CRITICAL: 1.0
+- HIGH: 0.75
+- MEDIUM: 0.5
+
+Confidence is used **only for ranking** violations in the UI.
+
+## Why This Matters
+
+### For New Rules
+- Start with reasonable confidence based on rule quality
+- No "cold start" problem — rules fire immediately
+
+### For Established Rules
+- Learn from user feedback
+- Downweight noisy rules automatically
+- Upweight accurate rules automatically
+
+### For Compliance Teams
+- Focus on high-confidence violations first
+- Trust the system more over time
+- Reduce false positive fatigue
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Bayesian Feedback" icon="arrows-spin" href="/engine/bayesian-feedback">
+    Learn how user reviews improve rules
+  </Card>
+  <Card title="Explainability" icon="file-lines" href="/engine/explainability">
+    Understand violation explanations
+  </Card>
+</CardGroup>

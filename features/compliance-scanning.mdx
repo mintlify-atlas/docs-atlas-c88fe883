@@ -1,0 +1,225 @@
+---
+title: "Compliance Scanning"
+description: "Run deterministic compliance scans and track progress in real-time"
+---
+
+Once your policy and data are configured, run a compliance scan to detect violations.
+
+## How Scanning Works
+
+Yggdrasil uses a **deterministic rule engine** — no ML models in the enforcement loop. This makes results reproducible and audit-ready.
+
+<Steps>
+  <Step title="Trigger the scan">
+    Click "Run Scan" after confirming your column mapping. The API creates a scan record with status `running`.
+  </Step>
+  
+  <Step title="Rule execution">
+    The engine evaluates all active rules against your dataset:
+    - **Single-transaction rules:** Evaluated per row
+    - **Windowed rules:** Grouped by account, evaluated within time windows
+    
+    Each rule's compound conditions are checked as boolean AND/OR trees.
+  </Step>
+  
+  <Step title="Violation detection">
+    When a record matches a rule's conditions:
+    - A violation is created with evidence (matched field values)
+    - Confidence score is calculated (rule quality + specificity + Bayesian precision)
+    - Explanation is generated from deterministic templates (no LLM calls)
+  </Step>
+  
+  <Step title="Results storage">
+    All violations are persisted to the database with:
+    - Policy excerpt violated
+    - Evidence grid (field values from your data)
+    - Explanation (human-readable condition summary)
+    - Severity (CRITICAL, HIGH, MEDIUM)
+  </Step>
+  
+  <Step title="Compliance score calculation">
+    A final compliance score (0-100) is computed based on:
+    - Total records scanned
+    - Violation count by severity
+    - Percentage of clean records
+  </Step>
+</Steps>
+
+## Scan Status Polling
+
+Scans run synchronously but may take a few seconds for large datasets. Poll the status endpoint:
+
+```bash
+GET /api/scan/{scan_id}
+```
+
+Response:
+```json
+{
+  "status": "running" | "completed" | "failed",
+  "progress": 0.75,  // 0.0 to 1.0
+  "violation_count": 42,
+  "compliance_score": 87.3
+}
+```
+
+<Note>
+  Scans typically complete in under 5 seconds for datasets up to 50K rows.
+</Note>
+
+## Rule Types
+
+The engine routes rules by type:
+
+### Single-Transaction Rules
+Evaluated per row. Example: "Transaction amount > $10,000"
+
+```json
+{
+  "type": "single_transaction",
+  "conditions": {
+    "field": "amount",
+    "operator": "greater_than",
+    "value": 10000
+  }
+}
+```
+
+### Windowed Rules
+Grouped by account, evaluated within time windows. Example: "3+ transactions within 24 hours"
+
+```json
+{
+  "type": "velocity",
+  "threshold": 3,
+  "time_window": 24,
+  "conditions": { ... }
+}
+```
+
+Supported windowed types:
+- `aggregation`: Sum/count aggregates (e.g., total transaction value)
+- `velocity`: Transaction frequency limits
+- `structuring`: Splitting transactions to avoid thresholds
+- `dormant_reactivation`: Inactive accounts suddenly active
+- `round_amount`: Suspicious even-number patterns
+
+## Condition Evaluation
+
+Rules use compound boolean logic:
+
+### AND Conditions
+All conditions must match:
+
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 10000 },
+    { "field": "type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+  ]
+}
+```
+
+### OR Conditions
+Any condition must match:
+
+```json
+{
+  "OR": [
+    { "field": "country", "operator": "equals", "value": "RU" },
+    { "field": "country", "operator": "equals", "value": "KP" }
+  ]
+}
+```
+
+### Nested Logic
+Combine AND/OR for complex rules:
+
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">", "value": 5000 },
+    {
+      "OR": [
+        { "field": "type", "operator": "equals", "value": "WIRE" },
+        { "field": "type", "operator": "equals", "value": "CASH" }
+      ]
+    }
+  ]
+}
+```
+
+## Supported Operators
+
+| Operator | Aliases | Description |
+|----------|---------|-------------|
+| `>=` | `greater_than_or_equal`, `gte` | Numeric comparison |
+| `>` | `greater_than`, `gt` | Numeric comparison |
+| `<=` | `less_than_or_equal`, `lte` | Numeric comparison |
+| `<` | `less_than`, `lt` | Numeric comparison |
+| `==` | `equals`, `eq` | Equality with type coercion |
+| `!=` | `not_equals`, `neq` | Inequality |
+| `IN` | — | Set membership |
+| `BETWEEN` | — | Range check `[min, max]` |
+| `exists` | — | Field present and non-empty |
+| `not_exists` | — | Field missing or empty |
+| `contains` | `includes` | Case-insensitive substring |
+| `MATCH` | `regex` | Regular expression test |
+
+## Violation Capping
+
+To prevent overwhelming results:
+- Each rule is capped at **1,000 violations**
+- The true count is tracked separately in `violation_count`
+- Compliance score uses the true count, not the capped stored count
+
+<Warning>
+  If a rule hits the 1,000-violation cap, review the rule logic. Broad rules indicate insufficient signal specificity.
+</Warning>
+
+## Performance
+
+Scan execution time:
+
+| Dataset Size | Typical Duration |
+|--------------|------------------|
+| 1,000 rows | < 1 second |
+| 10,000 rows | 1-2 seconds |
+| 50,000 rows | 3-5 seconds |
+
+Optimizations:
+- In-memory execution (no database queries during evaluation)
+- Concurrent batch writes for violations (2,500 rows per batch)
+- Metadata caching for statistical anomaly detection
+
+## What Gets Stored
+
+After the scan completes:
+
+### Scan Record
+- Status: `completed`
+- Violation count (true count, pre-cap)
+- Compliance score (0-100)
+- Score history (initial entry)
+- Mapping configuration (for auditability)
+
+### Violations
+- Rule ID and name
+- Severity
+- Record ID (from your CSV)
+- Evidence (matched field values)
+- Policy excerpt violated
+- Deterministic explanation
+- Status: `pending` (awaiting review)
+
+### PII Findings
+If PII detection was run, findings are linked to the scan via `scan_id`.
+
+## Next Steps
+
+After the scan completes:
+
+1. Review violations by severity → [Violation Review](/features/violation-review)
+2. Approve or dismiss findings to improve rule precision
+3. Generate AI remediation steps → [Remediation](/features/remediation)
+4. Export the full compliance report

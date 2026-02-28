@@ -1,0 +1,143 @@
+---
+title: "Data Upload"
+description: "Upload CSV datasets with automatic schema detection and AI-suggested column mappings"
+---
+
+After selecting your compliance policy, upload the CSV dataset you want to audit.
+
+## Upload Process
+
+<Steps>
+  <Step title="Upload your CSV file">
+    Drag and drop or select a CSV file. The system supports files up to 50,000 rows (larger files are automatically sampled).
+  </Step>
+  
+  <Step title="Schema detection">
+    Yggdrasil automatically analyzes your CSV headers and content to detect the dataset type:
+    - **IBM_AML:** IBM's AML transaction dataset format
+    - **PAYSIM:** PaySim synthetic fraud detection format
+    - **GENERIC:** Any other dataset structure
+    
+    For known formats, the system instantly maps columns to the standard schema with 100% confidence.
+  </Step>
+  
+  <Step title="Review suggested mappings">
+    The system maps your CSV columns to standard compliance fields:
+    - `amount`: Monetary values (transaction amount, payment, cost)
+    - `step`: Timestamp or time-step column (date, timestamp, period)
+    - `account`: Primary entity identifier (sender, account_id, user_id, employee)
+    - `recipient`: Secondary entity identifier (receiver, destination)
+    - `type`: Category column (transaction_type, event_type, category)
+    
+    Each mapping includes a confidence percentage.
+  </Step>
+  
+  <Step title="View sample data">
+    Review the first 5 rows to verify the data loaded correctly.
+  </Step>
+</Steps>
+
+## Dataset Detection
+
+### Known Datasets
+
+If your CSV matches a known format, Yggdrasil applies preset mappings:
+
+**IBM AML Dataset:**
+- Detects columns like `Timestamp`, `From Bank`, `Account`, `To Bank`, `Amount Received`, `Payment Currency`
+- Auto-detects temporal scale (1 step = 1 hour)
+- Maps standard fields with 100% confidence
+
+**PaySim Dataset:**
+- Detects `step`, `type`, `amount`, `nameOrig`, `nameDest`, `isFraud`
+- Auto-detects temporal scale (1 step = 1 hour)
+- Maps standard fields with 100% confidence
+
+### Generic Datasets
+
+For custom datasets, Yggdrasil uses AI to suggest column mappings:
+
+- Gemini analyzes your headers and sample rows
+- Maps columns to standard fields where confident
+- Shows confidence scores (0-100%)
+- Only suggests mappings above 60% confidence
+
+<Note>
+  **No forced mappings:** If the AI isn't confident about a column, it won't map it. You can manually adjust mappings in the next step.
+</Note>
+
+## What Data Is Stored?
+
+Your CSV data is stored **in-memory only** during the audit session:
+
+- ✅ Data never persists to the database
+- ✅ Only scan results (violations) are saved
+- ✅ Each upload gets a unique `upload_id` that expires when you close the browser
+
+<Warning>
+  **Refresh warning:** If you refresh the page before completing the scan, you'll need to re-upload your CSV. Yggdrasil does not persist uploaded data.
+</Warning>
+
+## Dataset Metadata
+
+For confidence scoring, Yggdrasil calculates:
+
+- **Total rows:** Used for sampling decisions (caps at 50K)
+- **Column statistics:**
+  - Type detection (numeric vs. categorical)
+  - Cardinality (unique values)
+  - Min/max/mean for numeric columns
+  - Used later for statistical anomaly detection
+
+## Temporal Scale Detection
+
+Some compliance rules use time windows (e.g., "3 transactions within 24 hours"). Yggdrasil auto-detects temporal scale:
+
+- **IBM AML:** 1 step = 1 hour
+- **PaySim:** 1 step = 1 hour
+- **GENERIC:** 1 step = 1 day (default)
+
+You can override this during column mapping confirmation.
+
+## Supported CSV Formats
+
+✅ UTF-8 encoded CSV files  
+✅ Headers required (first row)  
+✅ Up to 50,000 rows (auto-sampled if larger)  
+✅ Numeric and text columns  
+✅ Date/timestamp columns (any format)  
+❌ Excel files (.xlsx) — export to CSV first  
+❌ Compressed files (.zip, .gz) — extract first  
+
+## File Size Limits
+
+| Rows | Processing |
+|------|------------|
+| < 50,000 | Full scan |
+| > 50,000 | Random sample of 50K rows |
+
+<Note>
+  Sampling is deterministic: uploading the same file twice produces the same sample.
+</Note>
+
+## Common Issues
+
+### "Failed to parse CSV"
+- **Cause:** Invalid CSV format (missing quotes, unescaped commas)
+- **Fix:** Open in Excel/Google Sheets and re-export as CSV
+
+### "No extractable headers"
+- **Cause:** CSV missing header row
+- **Fix:** Add column names as the first row
+
+### "No mappings suggested"
+- **Cause:** Column names don't match standard schema, or AI couldn't infer mappings
+- **Fix:** Manually configure mappings in the next step
+
+## Next Steps
+
+After upload completes:
+
+1. Review suggested column mappings → [Column Mapping](/features/column-mapping)
+2. Optionally run PII detection → [PII Detection](/features/pii-detection)
+3. Confirm mappings and run the scan

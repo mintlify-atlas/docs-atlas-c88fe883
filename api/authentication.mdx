@@ -1,0 +1,157 @@
+---
+title: 'Authentication'
+description: 'Authenticate API requests using Supabase Auth with SSR cookies or JWT bearer tokens'
+---
+
+## Overview
+
+All API endpoints use Supabase Authentication to verify user identity and enforce Row-Level Security (RLS) policies. The authentication system supports two methods:
+
+1. **Cookie-based SSR authentication** - For server-side rendered pages
+2. **Bearer token authentication** - For client-side API requests
+
+## Authentication Methods
+
+### Cookie-based Authentication
+
+When making requests from server-side rendered pages, authentication is handled automatically through HTTP-only cookies managed by Supabase SSR.
+
+```typescript
+import { createServerClient } from '@supabase/ssr';
+
+const supabase = createServerClient(url, key, {
+  cookies: {
+    getAll() {
+      return request.cookies.getAll();
+    },
+  },
+});
+
+const { data: { user } } = await supabase.auth.getUser();
+```
+
+### Bearer Token Authentication
+
+For client-side requests, include the user's JWT access token in the `Authorization` header:
+
+```bash
+curl -X POST https://your-domain.com/api/audits \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Q4 Compliance Audit","policy_type":"soc2"}'
+```
+
+## Obtaining Access Tokens
+
+### From the Supabase Client
+
+```typescript
+const { data: { session } } = await supabase.auth.getSession();
+const accessToken = session?.access_token;
+```
+
+### Using the Token in API Requests
+
+```typescript
+const response = await fetch('/api/audits', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    name: 'Q4 Compliance Audit',
+    policy_type: 'soc2'
+  }),
+});
+```
+
+## Authentication Flow
+
+The authentication system tries multiple strategies in order:
+
+1. **Bearer Token** - Checks the `Authorization` header for `Bearer <token>`
+2. **SSR Cookies** - Falls back to cookie-based session authentication
+3. **Unauthenticated** - Returns 401 error if both methods fail
+
+```typescript
+// Internal authentication logic (from lib/supabase.ts)
+export async function getSupabaseForRequest(request: NextRequest) {
+  // Try Bearer token first
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    return createClient(url, key, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    });
+  }
+
+  // Try cookie-based SSR auth
+  const ssrClient = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+    },
+  });
+  
+  const { data: { user } } = await ssrClient.auth.getUser();
+  if (user) {
+    return ssrClient;
+  }
+
+  throw new AuthError('Not authenticated');
+}
+```
+
+## Row-Level Security (RLS)
+
+All database tables use Supabase Row-Level Security policies that filter data by the authenticated user's ID:
+
+```sql
+-- Example RLS policy
+CREATE POLICY "Users can only see their own audits"
+  ON audits
+  FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+The `auth.uid()` function resolves to the user ID from the JWT token, ensuring users can only access their own data.
+
+### Important Notes
+
+<Warning>
+The basic Supabase client (`getSupabase()`) does not include authentication context and will **fail on tables with RLS policies** requiring `auth.uid()`. Always use `getSupabaseForRequest()` for authenticated operations.
+</Warning>
+
+## Error Responses
+
+### 401 Unauthorized
+
+Returned when authentication fails or no valid session is found:
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Not authenticated — no valid session found"
+}
+```
+
+### Common Causes
+
+- Missing or invalid JWT token
+- Expired session
+- Missing `Authorization` header
+- Invalid cookie data
+
+## Security Best Practices
+
+1. **Never expose JWT tokens** in client-side logs or error messages
+2. **Use HTTPS** for all API requests to prevent token interception
+3. **Refresh tokens** before they expire to maintain session continuity
+4. **Store tokens securely** - use HTTP-only cookies when possible
+5. **Validate tokens server-side** - never trust client-side authentication alone

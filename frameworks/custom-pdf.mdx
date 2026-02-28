@@ -1,0 +1,326 @@
+---
+title: Custom PDF Upload
+description: Extract enforceable rules from any regulatory document using Gemini 2.5 Flash
+---
+
+Yggdrasil supports **custom PDF upload** to extract structured, enforceable compliance rules from any regulatory document — including industry-specific regulations (HIPAA, PCI-DSS, GLBA) or internal company policies.
+
+## How It Works
+
+The custom PDF extraction pipeline uses **Gemini 2.5 Flash** to parse regulatory text and generate rules with compound boolean logic.
+
+<Steps>
+  <Step title="Upload PDF">
+    Upload your regulatory document via the audit wizard. Supported formats:
+    
+    - Standard PDFs (text-based)
+    - Scanned PDFs (OCR is applied automatically)
+    - Maximum file size: 10MB
+    - Maximum pages: 100
+  </Step>
+  
+  <Step title="Text Extraction">
+    Yggdrasil uses `unpdf` (serverless-compatible PDF parser) to extract text from the document.
+    
+    Text is chunked into sections to fit within Gemini's context window.
+  </Step>
+  
+  <Step title="AI Rule Extraction">
+    Gemini 2.5 Flash analyzes the document and identifies:
+    
+    - **Enforceable clauses** — Statements that can be validated against data
+    - **Thresholds** — Numeric limits (e.g., "transactions exceeding $10,000")
+    - **Conditions** — Boolean logic (e.g., "if amount > $10K AND type = WIRE")
+    - **Severity** — Risk level (CRITICAL, HIGH, MEDIUM)
+    - **Policy excerpts** — Exact quotes from the document
+    
+    The AI generates structured rules in the following format:
+    
+    ```json
+    {
+      "rule_id": "CUSTOM-001",
+      "name": "High-Value Wire Transfer",
+      "type": "single_transaction",
+      "severity": "HIGH",
+      "threshold": 50000,
+      "conditions": {
+        "AND": [
+          { "field": "type", "operator": "==", "value": "WIRE" },
+          { "field": "amount", "operator": ">", "value": 50000 }
+        ]
+      },
+      "policy_excerpt": "Wire transfers exceeding $50,000 must be reviewed.",
+      "policy_section": "Section 3.2"
+    }
+    ```
+  </Step>
+  
+  <Step title="Signal Specificity Validation">
+    Each extracted rule is scored using the **Signal Specificity Framework**:
+    
+    - **Single-signal rules** (e.g., "amount > $10K") are rejected unless they meet domain-specific thresholds
+    - **Multi-signal rules** (e.g., "amount > $10K AND type = WIRE AND dest_country = offshore") are accepted
+    - **Minimum combined specificity:** 2.0
+    
+    This filtering step minimizes false positives by ensuring rules combine multiple signals.
+  </Step>
+  
+  <Step title="Rule Review & Activation">
+    All extracted rules are displayed for review:
+    
+    - Toggle individual rules on/off
+    - Edit thresholds or conditions (advanced)
+    - View policy excerpts and severity assignments
+    
+    Only **active rules** are executed during the scan.
+  </Step>
+</Steps>
+
+## Signal Specificity Framework
+
+The **Signal Specificity Framework** is a scoring system that evaluates rule quality based on how many independent signals are combined.
+
+### Signal Types
+
+| Signal Type | Examples | Specificity Score |
+|---|---|---|
+| **Behavioral** | Transaction type, action, event | 1.0 per signal |
+| **Temporal** | Time window, frequency, velocity | 1.0 per signal |
+| **Relational** | Account relationships, cross-entity patterns | 1.0 per signal |
+| **Threshold** | Numeric limits (amount, count, age) | 0.5 per threshold |
+
+### Scoring Rules
+
+- **Single condition:** Score = specificity of that signal
+- **AND conditions:** Score = sum of all signal specificities
+- **OR conditions:** Score = max specificity among branches
+
+### Examples
+
+<AccordionGroup>
+  <Accordion title="Example 1: Single-Signal Rule (Rejected)" icon="xmark">
+    **Rule:**
+    
+    ```json
+    { "field": "amount", "operator": ">", "value": 10000 }
+    ```
+    
+    **Specificity Score:** 0.5 (threshold only)
+    
+    **Result:** Rejected (below minimum threshold of 2.0)
+    
+    **Reason:** This rule would fire on any transaction over $10K, producing too many false positives.
+  </Accordion>
+  
+  <Accordion title="Example 2: Two-Signal Rule (Accepted)" icon="check">
+    **Rule:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "amount", "operator": ">", "value": 10000 },
+        { "field": "type", "operator": "==", "value": "WIRE" }
+      ]
+    }
+    ```
+    
+    **Specificity Score:** 0.5 (threshold) + 1.0 (behavioral) = **1.5**
+    
+    **Result:** Borderline (may be rejected depending on domain)
+    
+    **Reason:** Still too broad — any wire transfer over $10K would trigger.
+  </Accordion>
+  
+  <Accordion title="Example 3: Multi-Signal Rule (Accepted)" icon="check">
+    **Rule:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "amount", "operator": ">", "value": 10000 },
+        { "field": "type", "operator": "==", "value": "WIRE" },
+        { "field": "dest_country", "operator": "IN", "value": ["offshore_jurisdictions"] }
+      ]
+    }
+    ```
+    
+    **Specificity Score:** 0.5 (threshold) + 1.0 (behavioral) + 1.0 (relational) = **2.5**
+    
+    **Result:** Accepted
+    
+    **Reason:** Combines multiple signals (amount + type + destination), reducing false positives.
+  </Accordion>
+  
+  <Accordion title="Example 4: Temporal + Behavioral (Accepted)" icon="check">
+    **Rule (Velocity-based):**
+    
+    ```json
+    {
+      "type": "velocity",
+      "threshold": 5,
+      "time_window": 24,
+      "conditions": { "field": "amount", "operator": ">", "value": 8000 }
+    }
+    ```
+    
+    **Specificity Score:** 0.5 (threshold) + 1.0 (temporal: 24h window) + 1.0 (behavioral: velocity pattern) = **2.5**
+    
+    **Result:** Accepted
+    
+    **Reason:** Velocity rules inherently combine temporal and behavioral signals.
+  </Accordion>
+</AccordionGroup>
+
+## Supported Rule Types
+
+The extraction engine can generate the following rule types:
+
+| Rule Type | Description | Example |
+|---|---|---|
+| **single_transaction** | Evaluate conditions per record | "Flag transactions > $10K" |
+| **aggregation** | Sum values within time window | "Flag accounts with total volume > $25K in 24h" |
+| **velocity** | Count occurrences within time window | "Flag 5+ transactions in 24h" |
+| **structuring** | Detect sub-threshold patterns | "Flag 3+ transactions between $8K-$10K in 24h" |
+| **dormant_reactivation** | Detect dormant account activity | "Flag dormant accounts (90d) with transaction > $5K" |
+| **round_amount** | Detect round-dollar patterns | "Flag 3+ round amounts ($X,000) in 30d" |
+
+## What Gets Extracted
+
+For each rule, Gemini extracts:
+
+<AccordionGroup>
+  <Accordion title="Rule Metadata" icon="tag">
+    - **rule_id** — Unique identifier (e.g., `CUSTOM-001`)
+    - **name** — Human-readable name (e.g., "High-Value Wire Transfer")
+    - **type** — Rule execution type (single_transaction, aggregation, velocity, etc.)
+    - **severity** — Risk level (CRITICAL, HIGH, MEDIUM)
+  </Accordion>
+  
+  <Accordion title="Thresholds & Windows" icon="sliders">
+    - **threshold** — Numeric limit (e.g., 10000 for $10K)
+    - **time_window** — Hours for temporal rules (e.g., 24 for "within 24 hours")
+  </Accordion>
+  
+  <Accordion title="Conditions (Boolean Logic)" icon="code-branch">
+    - **AND** — All conditions must match
+    - **OR** — Any condition must match
+    - **Leaf conditions** — Field, operator, value triples
+    
+    Example:
+    
+    ```json
+    {
+      "AND": [
+        { "field": "amount", "operator": ">=", "value": 10000 },
+        { "field": "type", "operator": "IN", "value": ["WIRE", "TRANSFER"] }
+      ]
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Policy References" icon="book">
+    - **policy_excerpt** — Exact quote from the PDF
+    - **policy_section** — Section/article reference (e.g., "Section 3.2", "Article 15")
+  </Accordion>
+</AccordionGroup>
+
+## Quality Assurance
+
+To ensure high-quality rule extraction:
+
+<Steps>
+  <Step title="Validation Against Schema">
+    All extracted rules are validated against Zod schemas to ensure:
+    
+    - Valid JSON structure
+    - Required fields present (rule_id, name, type, severity, conditions)
+    - Supported operators (>=, ==, IN, BETWEEN, etc.)
+  </Step>
+  
+  <Step title="Specificity Scoring">
+    Rules are scored using the Signal Specificity Framework:
+    
+    - Minimum combined specificity: 2.0
+    - Single-threshold rules rejected
+    - Compound conditions preferred
+  </Step>
+  
+  <Step title="Human Review">
+    All extracted rules are displayed for review before execution:
+    
+    - View policy excerpts
+    - Toggle rules on/off
+    - Edit thresholds (advanced users)
+  </Step>
+</Steps>
+
+## Example: HIPAA Privacy Rule Extraction
+
+<CodeGroup>
+```text Input PDF Excerpt
+Section 164.502(a) — Uses and Disclosures of Protected Health Information
+
+(1) A covered entity may not use or disclose protected health information, 
+except as permitted or required by this subpart.
+
+(2) A covered entity must obtain an individual's authorization for any use 
+or disclosure of PHI that is not for treatment, payment, or healthcare operations.
+```
+
+```json Extracted Rule
+{
+  "rule_id": "HIPAA-164.502-001",
+  "name": "Unauthorized PHI Disclosure",
+  "type": "single_transaction",
+  "severity": "CRITICAL",
+  "threshold": null,
+  "conditions": {
+    "AND": [
+      { "field": "data_category", "operator": "==", "value": "PHI" },
+      { "field": "disclosure_purpose", "operator": "NOT IN", "value": ["treatment", "payment", "operations"] },
+      { "field": "authorization_obtained", "operator": "==", "value": false }
+    ]
+  },
+  "policy_excerpt": "A covered entity must obtain an individual's authorization for any use or disclosure of PHI that is not for treatment, payment, or healthcare operations.",
+  "policy_section": "Section 164.502(a)(2)"
+}
+```
+</CodeGroup>
+
+**Specificity Score:** 1.0 (behavioral: PHI) + 1.0 (behavioral: purpose check) + 1.0 (behavioral: authorization) = **3.0** ✓
+
+## Limitations
+
+<Warning>
+- **Ambiguous text:** If policy language is vague (e.g., "reasonable measures"), Gemini may skip extraction
+- **Non-enforceable clauses:** Aspirational statements (e.g., "strive to protect") are not converted to rules
+- **Complex logic:** Nested OR conditions with 5+ branches may be simplified or split into multiple rules
+- **Context window:** PDFs over 100 pages may be truncated; consider uploading specific sections
+</Warning>
+
+## When to Use Custom PDF vs Prebuilt
+
+| Scenario | Recommended Approach |
+|---|---|
+| You need AML, GDPR, or SOC2 compliance | Use **prebuilt frameworks** (faster, includes historical fines) |
+| You have HIPAA, PCI-DSS, GLBA, or other industry regulations | Use **custom PDF upload** |
+| You're enforcing internal company policies | Use **custom PDF upload** |
+| You need to customize rule thresholds | Use **prebuilt + manual editing** or **custom PDF** |
+| You want to test a new regulation before production | Use **custom PDF** with a sample dataset |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Start an Audit" icon="play" href="/quickstart">
+    Upload your first PDF and extract rules
+  </Card>
+  <Card title="Rule Engine" icon="gear" href="/engine/architecture">
+    Learn how rules are evaluated
+  </Card>
+  <Card title="Confidence Scoring" icon="chart-line" href="/engine/confidence-scoring">
+    Understand how violations are scored
+  </Card>
+  <Card title="Explainability" icon="lightbulb" href="/engine/explainability">
+    See how violation explanations are generated
+  </Card>
+</CardGroup>

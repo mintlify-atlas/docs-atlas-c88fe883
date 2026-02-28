@@ -1,0 +1,178 @@
+---
+title: 'Complete Audit Workflow'
+description: 'End-to-end guide for running a compliance audit in Yggdrasil'
+icon: 'route'
+---
+
+This guide walks you through the complete audit workflow from policy selection to report export.
+
+<Steps>
+  <Step title="Create Audit">
+    Select your compliance framework to start a new audit.
+
+    ```bash
+    POST /api/audits
+    ```
+
+    **Framework Options:**
+    - **AML/FinCEN** — 11 rules for anti-money laundering (CTR, structuring, velocity)
+    - **GDPR** — 14+ rules for data protection and privacy
+    - **SOC2** — 5 trust principles (Security, Availability, Confidentiality, Processing Integrity, Privacy)
+    - **Custom PDF** — Upload any regulatory document for AI rule extraction
+
+    <Tip>
+      Prebuilt frameworks load instantly. Custom PDF extraction takes 30-60 seconds depending on document length.
+    </Tip>
+  </Step>
+
+  <Step title="Upload Data">
+    Upload your CSV dataset to scan against the selected policy.
+
+    ```bash
+    POST /api/data/upload
+    ```
+
+    **What Happens:**
+    - Schema detection — Yggdrasil identifies column types and dataset format
+    - AI mapping suggestion — Gemini maps CSV columns to policy fields
+    - PII scan — Background scan detects personally identifiable information (optional)
+
+    **Supported Formats:**
+    - CSV files up to 50MB
+    - Up to 50,000 rows (automatically sampled for larger datasets)
+    - Auto-detects PaySim and IBM AML datasets
+
+    <Note>
+      **Temporal Scaling**: If your data uses daily timestamps but rules expect hourly granularity, the system applies a 24x temporal scale automatically.
+    </Note>
+  </Step>
+
+  <Step title="Review Rules">
+    Toggle rules on or off before running the scan.
+
+    Navigate to `/audit/{id}/rules` to see all extracted rules. Each rule shows:
+    - Rule ID and severity badge
+    - Human-readable name
+    - Policy excerpt it enforces
+
+    **Per-Rule Controls:**
+    - Use the toggle switch to activate or deactivate any rule
+    - All rules are enabled by default
+    - You must have at least 1 active rule to proceed
+
+    <Tip>
+      Start with all rules enabled for your first scan. You can disable noisy rules after reviewing initial results.
+    </Tip>
+  </Step>
+
+  <Step title="Confirm Mapping">
+    Review and approve the AI-suggested column mappings.
+
+    ```bash
+    POST /api/data/mapping/confirm
+    ```
+
+    **Mapping Interface:**
+    - Shows policy field → CSV column mappings
+    - Displays confidence score for each mapping (0-100%)
+    - Low-confidence mappings (&lt;90%) are highlighted in amber
+    - Click the pencil icon to manually override any mapping
+
+    **Clarification Questions:**
+    - If Gemini is uncertain about your data format, it will ask clarifying questions
+    - Example: "Is this a transaction dataset or a user profile dataset?"
+    - You can skip all clarifications and use the default mappings
+
+    <Note>
+      **Explicit User Approval**: No data transformations happen behind the scenes. You must explicitly approve mappings before the scan runs.
+    </Note>
+  </Step>
+
+  <Step title="Run Scan">
+    Start the compliance scan with the deterministic rule engine.
+
+    ```bash
+    POST /api/scan/run
+    ```
+
+    **What Happens During Scan:**
+    1. **Normalization** — CSV strings coerced to typed values (numbers, booleans)
+    2. **Sampling** — Datasets >50K rows are sampled
+    3. **Rule Execution** — Each active rule evaluates against your data:
+       - **Single-transaction rules** — Check each row independently
+       - **Windowed rules** — Group by account and evaluate within time windows (velocity, structuring, aggregation)
+    4. **Confidence Scoring** — Each violation receives a score based on:
+       - Rule quality
+       - Signal specificity (compound conditions get a boost)
+       - Statistical anomaly detection
+       - Bayesian precision (historical feedback)
+
+    **Scan Status:**
+    - Poll `/api/scan/{id}` to track progress
+    - Status: `pending` → `running` → `completed` or `failed`
+    - Typical scan time: 10-30 seconds for 50K rows
+
+    <Tip>
+      The engine caps at 1,000 violations per rule to prevent result overload. If a rule fires more than 1,000 times, consider adjusting its threshold.
+    </Tip>
+  </Step>
+
+  <Step title="Review Results">
+    Navigate to the dashboard to review violations by severity, account, and rule.
+
+    ```bash
+    GET /api/violations?scan_id={id}
+    ```
+
+    **Dashboard Features:**
+    - **Compliance Score Gauge** — 0-100 score based on violation severity and volume
+    - **Severity Breakdown** — Critical, High, and Medium violation counts
+    - **Accounts Flagged** — Unique accounts with at least one violation
+    - **Violation Summary** — Collapsible tree grouped by severity → rule → account
+
+    **Evidence Drawer:**
+    - Click any violation to open the evidence panel
+    - Shows policy excerpt, rule logic, matched conditions, and raw evidence
+    - Displays AI explanation and historical context (GDPR rules only)
+    - **Review Actions**: Approve (true positive) or dismiss (false positive)
+
+    **Bayesian Feedback Loop:**
+    - When you approve a violation, the rule's precision increases
+    - When you dismiss a violation, the rule's precision decreases
+    - Future scans use these precision scores to weight confidence
+
+    <Note>
+      **True Positives vs False Positives**: A true positive is a real compliance violation. A false positive is a rule match that doesn't represent a real issue. Use the review buttons to train the system.
+    </Note>
+  </Step>
+
+  <Step title="Export Report">
+    Download the full compliance report as JSON.
+
+    ```bash
+    GET /api/export?scan_id={id}
+    ```
+
+    **Export Contents:**
+    - Policy metadata (ID, name, framework)
+    - Scan metadata (ID, score, violation count, timestamp)
+    - Full violation list with evidence
+    - Review history (approved, false_positive, notes)
+    - Severity summary (Critical, High, Medium counts)
+
+    **Use Cases:**
+    - Archive audit results for compliance records
+    - Feed violations into a ticketing system (Jira, Linear, etc.)
+    - Build custom reporting dashboards
+
+    <Tip>
+      The export includes both raw violations and review statuses, so you can distinguish between pending, approved, and dismissed findings.
+    </Tip>
+  </Step>
+</Steps>
+
+## What's Next?
+
+- [Rule Management](/guides/rule-management) — Learn how to manage rules, add rules from PDFs, and use prebuilt packs
+- [Interpreting Violations](/guides/interpreting-violations) — Understand severity levels, confidence scores, and evidence grids
+- [Exporting Reports](/guides/exporting-reports) — Deep dive into export formats and data structure

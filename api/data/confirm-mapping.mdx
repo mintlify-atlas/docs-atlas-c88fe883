@@ -1,0 +1,172 @@
+---
+title: 'Confirm Mapping'
+api: 'POST /api/data/mapping/confirm'
+description: 'Confirm and finalize column mappings for the uploaded dataset'
+---
+
+This endpoint accepts user-confirmed column mappings and temporal scale configuration. Once confirmed, the dataset is ready for PII scanning and policy compliance auditing.
+
+## Request
+
+<ParamField body="upload_id" type="string" required>
+  UUID of the uploaded dataset from `/api/data/upload`.
+</ParamField>
+
+<ParamField body="mapping_config" type="object" required>
+  Confirmed column mappings from CSV headers to standard fields. Each key is a standard field name, and each value is the corresponding CSV column name.
+
+  Standard fields:
+  - `account` - Primary entity identifier (sender, account_id, user_id, employee)
+  - `recipient` - Secondary entity identifier (receiver, destination, beneficiary)
+  - `amount` - Monetary value, transaction amount, or cost
+  - `step` - Timestamp, time-step, or period column
+  - `type` - Category, classification, or transaction type
+
+  Example:
+  ```json
+  {
+    "account": "orig_acct",
+    "recipient": "bene_acct",
+    "amount": "base_amt",
+    "step": "tran_timestamp",
+    "type": "tx_type"
+  }
+  ```
+</ParamField>
+
+<ParamField body="temporal_scale" type="number" required>
+  Scaling factor for temporal data normalization. Used to convert time units to a common scale.
+  - `24.0` - Days to hours (IBM AML datasets)
+  - `1.0` - Already in hours (PaySim, Generic)
+  - Custom values supported for domain-specific time scales
+</ParamField>
+
+<ParamField body="clarification_answers" type="array" default="[]">
+  Optional answers to clarification questions from the upload response. Each object contains:
+  - `question_id` (string) - Identifier for the question
+  - `answer` (string) - User's answer
+
+  Example:
+  ```json
+  [
+    {
+      "question_id": "currency_unit",
+      "answer": "USD"
+    }
+  ]
+  ```
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X POST https://your-domain.com/api/data/mapping/confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "upload_id": "a3f12b45-8c7d-4e9f-b1a2-3c4d5e6f7g8h",
+    "mapping_config": {
+      "account": "orig_acct",
+      "recipient": "bene_acct",
+      "amount": "base_amt",
+      "step": "tran_timestamp",
+      "type": "tx_type"
+    },
+    "temporal_scale": 24.0,
+    "clarification_answers": []
+  }'
+```
+
+## Response
+
+<ResponseField name="mapping_id" type="string" required>
+  Unique identifier for the confirmed mapping configuration. Use this ID when creating scans.
+</ResponseField>
+
+<ResponseField name="ready_to_scan" type="boolean" required>
+  Indicates whether the dataset is ready for PII scanning and compliance auditing. Always `true` on successful confirmation.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "mapping_id": "7b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e",
+  "ready_to_scan": true
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code:
+  - `VALIDATION_ERROR` - Invalid request body or missing required fields
+  - `INTERNAL_ERROR` - Unexpected server error
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error description.
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Validation error details from Zod schema validation.
+</ResponseField>
+
+### Example Error Response
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request body",
+  "details": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": ["upload_id"],
+      "message": "Required"
+    },
+    {
+      "code": "invalid_type",
+      "expected": "number",
+      "received": "string",
+      "path": ["temporal_scale"],
+      "message": "Expected number, received string"
+    }
+  ]
+}
+```
+
+## Validation Rules
+
+### upload_id
+- Must be a valid UUID v4
+- Must reference an existing upload from `/api/data/upload`
+
+### mapping_config
+- Must be an object with string keys and string values
+- Keys should be standard field names (`account`, `recipient`, `amount`, `step`, `type`)
+- Values should be valid CSV column names from the uploaded dataset
+- At least one mapping is recommended, but not required
+
+### temporal_scale
+- Must be a positive number
+- Common values: `1.0` (hours), `24.0` (days to hours), `60.0` (minutes to hours)
+
+### clarification_answers
+- Optional array, defaults to empty array
+- Each item must have `question_id` and `answer` fields
+
+## Usage Flow
+
+1. Upload CSV file via `/api/data/upload`
+2. Review suggested mappings and confidence scores
+3. Adjust mappings if needed (user can override AI suggestions)
+4. Submit confirmed mappings via this endpoint
+5. Use returned `mapping_id` for subsequent scans
+
+## Notes
+
+- Mapping configurations are stored in memory with session-based lifecycle
+- The same `upload_id` can be used with multiple mapping configurations
+- Once confirmed, mappings cannot be modified (create a new mapping instead)
+- The `ready_to_scan` flag is always `true` on success

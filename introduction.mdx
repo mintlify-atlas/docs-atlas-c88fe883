@@ -1,0 +1,112 @@
+---
+title: Introduction
+description: Autonomous policy-to-data compliance engine that bridges PDF regulations and database enforcement
+---
+
+## What is Yggdrasil?
+
+Yggdrasil is an autonomous policy-to-data compliance engine that transforms regulatory PDFs into enforceable rules and scans your datasets for violations. Upload a regulatory document, connect your data, and get audit-ready compliance violations with every finding traced back to the exact policy clause.
+
+**No auditors. No black boxes.**
+
+Yggdrasil bridges the gap between PDF policy documents and database enforcement. The system extracts enforceable rules from regulatory text using AI, maps them to your data schema, and runs a deterministic scan that produces audit-ready violations with full explainability.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/api/authentication"
+  >
+    Get started with authentication and run your first compliance scan
+  </Card>
+  <Card
+    title="How it works"
+    icon="gears"
+    href="/how-it-works"
+  >
+    Learn about the three-step process from policy upload to compliance results
+  </Card>
+  <Card
+    title="Key features"
+    icon="stars"
+    href="/key-features"
+  >
+    Explore deterministic enforcement, explainability, and the Signal Specificity Framework
+  </Card>
+  <Card
+    title="API reference"
+    icon="code"
+    href="/api/authentication"
+  >
+    Complete API documentation for integrating Yggdrasil into your systems
+  </Card>
+</CardGroup>
+
+## Why Yggdrasil?
+
+<AccordionGroup>
+  <Accordion title="Deterministic enforcement">
+    The rule engine is pure logic with no ML models in the critical path. Rules are evaluated as compound boolean expressions (AND/OR trees) against each record, making results reproducible and audit-ready.
+  </Accordion>
+  
+  <Accordion title="Explainability by default">
+    Every violation includes the exact policy excerpt it violates, the evidence from your data, and a condition summary. Explanations are generated from string templates, not LLM calls.
+  </Accordion>
+  
+  <Accordion title="Signal Specificity Framework">
+    Rules extracted from PDFs must combine multiple signals (behavioral + temporal + relational) to reach a minimum specificity threshold before they can fire. Single-threshold rules are rejected to minimize false positives.
+  </Accordion>
+  
+  <Accordion title="Bayesian feedback loop">
+    When you approve or dismiss a violation, that feedback updates a per-rule precision model. Rules that produce false positives lose confidence over time. Your reviews make the next scan better.
+  </Accordion>
+</AccordionGroup>
+
+## Supported compliance frameworks
+
+Yggdrasil comes with prebuilt policy frameworks and supports custom regulatory documents:
+
+- **AML / FinCEN** - 11 rules covering currency transaction reports, structuring detection, velocity limits, dormant account reactivation, and suspicious activity thresholds
+- **GDPR** - 14+ categories including consent management, data protection requirements, encryption, privacy impact assessments, and right of access/erasure
+- **SOC2** - 5 trust principles covering security, availability, confidentiality, processing integrity, and privacy
+- **Custom PDF** - Upload any regulatory document and let Gemini extract rules using the Signal Specificity Framework
+
+<Note>
+  All rule extraction requires a minimum combined specificity of 2.0, ensuring each rule combines multiple signals for reduced false positives.
+</Note>
+
+## Tech stack
+
+Yggdrasil is built on modern, production-ready technologies:
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 15 (App Router), React 19, TypeScript 5.7 |
+| Database | Supabase (PostgreSQL + Row-Level Security) |
+| Auth | Supabase Auth (SSR cookies + JWT bearer tokens) |
+| AI | Google Gemini 2.5 Flash via Vercel AI SDK |
+| PDF Parsing | unpdf (serverless-compatible) |
+| CSV Parsing | Papa Parse |
+| State | Zustand |
+| UI | Tailwind CSS 4, shadcn/ui, Radix UI, Lucide icons |
+| Charts | Recharts |
+| Validation | Zod 4 |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Understand the workflow"
+    icon="diagram-project"
+    href="/how-it-works"
+  >
+    Learn how Yggdrasil processes policies and scans data
+  </Card>
+  <Card
+    title="Explore features"
+    icon="compass"
+    href="/key-features"
+  >
+    Deep dive into deterministic enforcement and explainability
+  </Card>
+</CardGroup>

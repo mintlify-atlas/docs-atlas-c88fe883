@@ -1,0 +1,171 @@
+---
+title: "Generate Remediation"
+api: "POST /api/violations/{id}/remediation"
+description: "Generate AI-powered remediation steps with code snippets for fixing compliance violations"
+---
+
+Use Gemini AI to generate specific, actionable remediation steps with working code snippets. Results are cached by `rule_id` to avoid redundant API calls.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  Unique violation identifier
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string">
+  High-level summary of the remediation approach
+</ResponseField>
+
+<ResponseField name="steps" type="array">
+  Ordered list of remediation steps with code
+  
+  <ResponseField name="title" type="string">
+    Step description
+  </ResponseField>
+  
+  <ResponseField name="code" type="string">
+    Copy-pasteable code snippet
+  </ResponseField>
+  
+  <ResponseField name="language" type="string">
+    Code language: `sql`, `typescript`, `python`, `bash`, `terraform`, or `text`
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="estimated_effort" type="string">
+  Time estimate (e.g., "2-4 hours", "1-2 days")
+</ResponseField>
+
+<ResponseField name="risk_level" type="string">
+  Implementation risk level: `low`, `medium`, or `high`
+</ResponseField>
+
+<ResponseField name="applicable_frameworks" type="array">
+  Compliance frameworks addressed by this fix (e.g., `["GDPR", "SOC 2", "ISO 27001"]`)
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X POST "https://api.example.com/api/violations/viol_789xyz/remediation" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch('/api/violations/viol_789xyz/remediation', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  }
+});
+const remediation = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://api.example.com/api/violations/viol_789xyz/remediation',
+    headers={'Authorization': 'Bearer YOUR_TOKEN'}
+)
+remediation = response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "summary": "Implement automated breach notification workflow with 72-hour deadline tracking and supervisory authority integration.",
+  "steps": [
+    {
+      "title": "Add breach notification tracking table",
+      "code": "CREATE TABLE breach_notifications (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  breach_date TIMESTAMP NOT NULL,\n  detection_date TIMESTAMP NOT NULL,\n  notification_deadline TIMESTAMP GENERATED ALWAYS AS (detection_date + INTERVAL '72 hours') STORED,\n  affected_records INTEGER NOT NULL,\n  data_types TEXT[] NOT NULL,\n  notification_status TEXT CHECK (notification_status IN ('pending', 'sent', 'overdue')) DEFAULT 'pending',\n  supervisory_authority_id TEXT,\n  created_at TIMESTAMP DEFAULT NOW()\n);\n\nCREATE INDEX idx_notification_deadline ON breach_notifications(notification_deadline) WHERE notification_status = 'pending';",
+      "language": "sql"
+    },
+    {
+      "title": "Implement automated notification service",
+      "code": "import { sendBreachNotification } from '@/lib/gdpr/notifications';\n\nexport async function checkBreachDeadlines() {\n  const supabase = getSupabaseClient();\n  \n  // Find breaches approaching 72-hour deadline\n  const { data: breaches } = await supabase\n    .from('breach_notifications')\n    .select('*')\n    .eq('notification_status', 'pending')\n    .lt('notification_deadline', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());\n  \n  for (const breach of breaches) {\n    // Send to supervisory authority\n    await sendBreachNotification({\n      breachId: breach.id,\n      authority: breach.supervisory_authority_id,\n      affectedRecords: breach.affected_records,\n      dataTypes: breach.data_types\n    });\n    \n    // Update status\n    await supabase\n      .from('breach_notifications')\n      .update({ notification_status: 'sent' })\n      .eq('id', breach.id);\n  }\n}",
+      "language": "typescript"
+    },
+    {
+      "title": "Schedule daily deadline check",
+      "code": "0 8 * * * /usr/bin/node /app/scripts/check-breach-deadlines.js",
+      "language": "bash"
+    },
+    {
+      "title": "Add monitoring alerts",
+      "code": "Configure monitoring to alert compliance team 24 hours before notification deadline. Set up escalation path for overdue notifications.",
+      "language": "text"
+    }
+  ],
+  "estimated_effort": "4-6 hours",
+  "risk_level": "medium",
+  "applicable_frameworks": [
+    "GDPR",
+    "CCPA",
+    "ISO 27001"
+  ]
+}
+```
+</ResponseExample>
+
+## Caching Behavior
+
+Remediation responses are **cached by `rule_id`** to improve performance:
+- First request for a rule triggers Gemini API call
+- Subsequent requests for the same rule return cached results instantly
+- Cache is in-memory and resets when the server restarts
+
+Example:
+```
+POST /api/violations/viol_123/remediation  // rule_id: GDPR_BREACH_NOTIFICATION
+→ Gemini API call, response cached
+
+POST /api/violations/viol_456/remediation  // rule_id: GDPR_BREACH_NOTIFICATION  
+→ Instant cache hit, no API call
+```
+
+## AML Rule Restrictions
+
+Remediation generation is **not available** for AML (Anti-Money Laundering) violations. These rules require human review and regulatory reporting, not code fixes.
+
+AML rule patterns (blocked):
+- `CTR_*` - Currency Transaction Reports
+- `SAR_*` - Suspicious Activity Reports
+- `STRUCTURING` - Transaction structuring detection
+- `VELOCITY` - Transaction velocity monitoring
+- `DORMANT` - Dormant account reactivation
+- `ROUND_AMOUNT` - Round amount patterns
+- `HIGH_RISK` - High-risk entity transactions
+- `RAPID_MOVEMENT` - Rapid fund movement
+- `SUB_THRESHOLD` - Sub-threshold structuring
+- `SMURFING` - Smurfing detection
+
+Attempting to generate remediation for AML violations returns:
+```json
+{
+  "error": "NOT_APPLICABLE",
+  "message": "Remediation generation is not available for AML violations. AML violations require human review and regulatory reporting, not code fixes."
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code: `NOT_FOUND`, `NOT_APPLICABLE`, `UNAUTHORIZED`, or `INTERNAL_ERROR`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+## Remediation Quality
+
+The AI generates:
+- **Specific, actionable steps** (not vague advice like "implement encryption")
+- **Working code snippets** that can be copy-pasted
+- **Multiple languages** (SQL, TypeScript, Python, Bash, Terraform)
+- **Practical implementation details** (indexes, monitoring, error handling)
+
+Steps are ordered by impact, with the most critical fixes first.

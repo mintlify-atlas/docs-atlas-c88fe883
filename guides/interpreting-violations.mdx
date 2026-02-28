@@ -1,0 +1,320 @@
+---
+title: 'Interpreting Violations'
+description: 'How to read violation results, severity levels, confidence scores, and evidence grids'
+icon: 'magnifying-glass'
+---
+
+Every violation in Yggdrasil includes explainable evidence, policy context, and actionable insights. This guide helps you distinguish true positives from false positives.
+
+## Violation Dashboard
+
+After a scan completes, navigate to `/dashboard/{scanId}` to see:
+
+**Top Stats:**
+- **Compliance Score Gauge** — 0-100 score (higher = more compliant)
+- **Critical Violations** — Highest severity issues requiring immediate action
+- **High Risk** — Important violations that should be addressed
+- **Accounts Flagged** — Unique accounts with at least one violation
+
+**Violation Summary:**
+- Collapsible tree grouped by **Severity → Rule → Account**
+- Click any account to open the **Evidence Drawer** for detailed inspection
+
+<Note>
+Violations with `status = 'false_positive'` are excluded from the summary to reduce noise. They still appear in the full case view.
+</Note>
+
+## Severity Levels
+
+Yggdrasil uses three severity levels:
+
+| Severity | Color | Meaning | Example |
+|----------|-------|---------|--------|
+| **CRITICAL** | Red | Immediate regulatory risk, potential fines or legal action | Unencrypted personal data, missing DPO for high-risk processing |
+| **HIGH** | Amber | Significant compliance gap, requires prompt remediation | Missing consent for marketing, insufficient access controls |
+| **MEDIUM** | Gray | Lower-priority issue, should be addressed in next review cycle | Incomplete audit logs, missing privacy policy link |
+
+**Severity Weights in Compliance Score:**
+- `CRITICAL` violations have 1.0x weight (full impact)
+- `HIGH` violations have 0.75x weight
+- `MEDIUM` violations have 0.5x weight
+
+The compliance score decreases more sharply with Critical violations than with Medium violations.
+
+<Tip>
+**Prioritization Strategy**: Address all Critical violations first, then High, then Medium. Use the severity filter in the dashboard to focus your review.
+</Tip>
+
+## Confidence Scores
+
+Each violation receives a confidence score (0-100%) indicating how likely it is a true positive.
+
+**Confidence Components:**
+
+```typescript
+confidence = rule_quality              // 0-0.2
+           + signal_specificity_boost  // 0-0.2
+           + statistical_anomaly       // 0-0.3
+           + bayesian_precision        // 0-0.2
+           + criticality_weight        // 0-0.1
+```
+
+### 1. Rule Quality (0-0.2)
+
+- Measures structural quality of the rule definition
+- Higher for rules with specific conditions, lower for broad thresholds
+
+### 2. Signal Specificity Boost (0-0.2)
+
+- Rules with compound `AND` conditions get a boost
+- Example: `amount > 10000 AND type = WIRE` is more specific than `amount > 10000` alone
+
+### 3. Statistical Anomaly (0-0.3)
+
+- How unusual is this value compared to the dataset distribution?
+- Example: A $1M transaction in a dataset where 99% are <$1K gets a high anomaly score
+
+### 4. Bayesian Precision (0-0.2)
+
+- Historical feedback from your reviews
+- Formula: `precision = (1 + approved_count) / (2 + approved_count + false_positive_count)`
+- Rules with many false positives lose confidence
+- Rules with consistent true positives gain confidence
+
+### 5. Criticality Weight (0-0.1)
+
+- `CRITICAL` violations get the highest boost
+- `HIGH` violations get 0.75x boost
+- `MEDIUM` violations get 0.5x boost
+
+<Note>
+**Bayesian Learning**: The more you review violations (approve or dismiss), the more accurate the confidence scores become. Your feedback trains the system.
+</Note>
+
+## Evidence Drawer
+
+Click any violation in the dashboard to open the **Evidence Drawer** — a detailed panel showing all context for the violation.
+
+### Policy Excerpt
+
+- Shows the exact clause from the regulatory document that was violated
+- Includes section reference (e.g., "GDPR Article 5(1)(f)")
+- Displayed as a blockquote with source citation
+
+**Example:**
+
+> "Personal data shall be processed in a manner that ensures appropriate security of the personal data, including protection against unauthorised or unlawful processing and against accidental loss, destruction or damage, using appropriate technical or organisational measures."
+>
+> — **GDPR Article 5(1)(f)**
+
+### Rule Logic
+
+- Shows the rule ID and condition summary
+- For threshold rules: displays threshold vs. actual value
+- For condition-based rules: shows the matched condition logic
+
+**Example (Threshold Rule):**
+
+```
+Rule: aml_rule_1
+Threshold: $10,000
+Actual: $15,750 ← Violation
+```
+
+**Example (Condition Rule):**
+
+```
+Rule: gdpr_encryption
+Condition: encryption_at_rest = false AND contains_pii = true
+```
+
+### AI Explanation
+
+- Deterministic template-generated explanation (not LLM-generated during enforcement)
+- Explains **why** the violation occurred and **what** rule was violated
+- Written in plain language for non-technical stakeholders
+
+**Example:**
+
+> "This transaction exceeds the Currency Transaction Report (CTR) threshold of $10,000. FinCEN requires financial institutions to file a CTR for cash transactions over this amount. The actual transaction amount was $15,750."
+
+<Note>
+**Explainability by Default**: Explanations are generated from string templates, not LLM calls. This makes them deterministic, reproducible, and audit-ready.
+</Note>
+
+### Historical Context (GDPR Only)
+
+For GDPR violations, the drawer shows:
+
+- **Average Historical Fine** — Mean fine amount for this article violation (from Kaggle GDPR Violations dataset)
+- **Real-World Breach Example** — Anonymized description of a past enforcement action
+- **Article Reference** — Full article text with paragraph breakdown
+
+**Example:**
+
+```
+Avg. Historical Fine: €50,000
+Breach Example: "Company failed to implement encryption for customer PII stored in cloud database. Data Protection Authority issued fine for violating Article 32 security requirements."
+Article Reference: GDPR Article 32
+```
+
+Click the article reference to expand the full text with paragraph-by-paragraph breakdown.
+
+### Evidence Grid
+
+- Shows the raw field values from the record that triggered the violation
+- Displays as key-value pairs in a monospace font
+- Includes transaction details: amount, type, account, recipient, timestamp, etc.
+
+**Example:**
+
+```
+account: C123456789
+recipient: C987654321
+amount: 15750.00
+type: WIRE
+timestamp: 2024-03-15T14:32:00Z
+oldbalanceOrg: 50000.00
+newbalanceOrig: 34250.00
+```
+
+<Tip>
+Use the evidence grid to verify the violation is a true positive. Check if the matched fields make sense in context.
+</Tip>
+
+### Rule Accuracy (If Available)
+
+For rules validated against ground-truth labels, the drawer shows:
+
+- **Precision** — % of flagged violations that are true positives
+- **Recall** — % of true violations that were detected
+- **F1 Score** — Harmonic mean of precision and recall
+
+**Example:**
+
+```
+Precision: 92%
+Recall: 88%
+F1: 90%
+Validated against: PaySim labeled fraud dataset
+```
+
+High precision (>80%) means the rule rarely fires false positives. High recall (>80%) means the rule catches most true violations.
+
+## True Positives vs False Positives
+
+### True Positive (TP)
+
+A violation that represents a **real compliance issue**.
+
+**Examples:**
+- A $15K transaction flagged by CTR rule → TP if no CTR was filed
+- A database without encryption flagged by GDPR rule → TP if it contains PII
+- A user account without marketing consent flagged by GDPR → TP if marketing emails were sent
+
+**Action**: Click **Confirm Violation** to mark as TP. This increases the rule's Bayesian precision score.
+
+### False Positive (FP)
+
+A violation that **does not represent a real compliance issue** (rule matched but context is wrong).
+
+**Examples:**
+- A $15K transaction flagged by CTR rule → FP if a CTR was already filed (not in dataset)
+- A test database without encryption flagged by GDPR rule → FP if it contains synthetic data, not real PII
+- A user account without marketing consent flagged by GDPR → FP if no marketing emails were ever sent
+
+**Action**: Click **Mark as False Positive** to dismiss. This decreases the rule's Bayesian precision score.
+
+<Note>
+**Context Matters**: A rule match is only a violation if it represents a real compliance gap. Use your domain expertise to evaluate context that isn't in the dataset.
+</Note>
+
+## Review Workflow
+
+<Steps>
+  <Step title="Open Evidence Drawer">
+    Click any account in the violation summary to open the drawer.
+  </Step>
+
+  <Step title="Read Policy Excerpt">
+    Understand what regulatory requirement was violated.
+  </Step>
+
+  <Step title="Check Rule Logic">
+    Verify the threshold or condition match makes sense.
+  </Step>
+
+  <Step title="Inspect Evidence Grid">
+    Review the raw field values that triggered the rule.
+  </Step>
+
+  <Step title="Evaluate Context">
+    Consider context outside the dataset:
+    - Was a required report already filed?
+    - Is this a test account or production account?
+    - Is there a valid business exception?
+  </Step>
+
+  <Step title="Make a Decision">
+    - **Confirm Violation**: True positive → regulatory risk
+    - **Mark as False Positive**: Rule matched but no real issue
+    - **Add Review Note**: Explain your reasoning for future reference
+  </Step>
+</Steps>
+
+<Tip>
+**Add Review Notes**: Use the notes field to document why you approved or dismissed a violation. This helps with audit trails and team handoffs.
+</Tip>
+
+## Generate Fix (GDPR Only)
+
+For GDPR violations, click **Generate Fix** to get AI-powered remediation steps.
+
+**What You Get:**
+- Summary of the fix
+- Step-by-step remediation code (SQL, TypeScript, Python, Terraform)
+- Estimated effort (e.g., "2-4 hours")
+- Risk level (low, medium, high)
+- Applicable frameworks (GDPR, SOC2, ISO 27001)
+
+**Example Remediation Step:**
+
+```sql
+-- Step 1: Enable encryption at rest for user_profiles table
+ALTER TABLE user_profiles
+SET ENCRYPTED = TRUE
+WITH (ENCRYPTION_TYPE = 'AES256');
+```
+
+<Note>
+**AML Rules Don't Get Fixes**: AML violations typically require manual investigation (not code changes), so the Generate Fix button is hidden for AML rules.
+</Note>
+
+## Best Practices
+
+1. **Start with Critical Violations**
+   - Sort by severity: Critical → High → Medium
+   - Address Critical violations within 24-48 hours
+
+2. **Trust High-Confidence Scores**
+   - Violations with confidence &gt;80% are usually true positives
+   - Violations with confidence &lt;50% require extra scrutiny
+
+3. **Review Systematically**
+   - Work through one severity level at a time
+   - Review all violations for a single account together (cases view)
+   - Document your reasoning in review notes
+
+4. **Use Historical Context**
+   - For GDPR violations, check the average fine amount
+   - Use real-world breach examples to understand enforcement trends
+
+5. **Feed Back to the System**
+   - Always mark true positives as approved
+   - Always mark false positives as dismissed
+   - Your feedback trains the Bayesian precision model
+
+## What's Next?
+
+- [Exporting Reports](/guides/exporting-reports) — Export full compliance reports with evidence and reviews
+- [Rule Management](/guides/rule-management) — Adjust rules, disable noisy rules, add custom rules

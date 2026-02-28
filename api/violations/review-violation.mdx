@@ -1,0 +1,169 @@
+---
+title: "Review Violation"
+api: "PATCH /api/violations/{id}"
+description: "Mark a violation as approved or false positive and update the compliance score with Bayesian feedback"
+---
+
+Review a compliance violation by marking it as approved or a false positive. This triggers:
+1. Compliance score recalculation for the scan
+2. **Bayesian feedback loop** - updates the parent rule's accuracy statistics
+3. Score history tracking for compliance trend analysis
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  Unique violation identifier
+</ParamField>
+
+## Request Body
+
+<ParamField body="status" type="string" required>
+  Review decision. Valid values:
+  - `approved` - Confirms the violation is legitimate
+  - `false_positive` - Marks the violation as incorrectly flagged
+</ParamField>
+
+<ParamField body="review_note" type="string">
+  Optional notes explaining the review decision
+</ParamField>
+
+## Response
+
+<ResponseField name="success" type="boolean">
+  Indicates whether the review was successful
+</ResponseField>
+
+<ResponseField name="violation" type="object">
+  Updated violation data
+  
+  <ResponseField name="id" type="string">
+    Violation identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    New status: `approved` or `false_positive`
+  </ResponseField>
+  
+  <ResponseField name="reviewed_at" type="string">
+    ISO 8601 timestamp when the review was completed
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="updated_score" type="number">
+  New compliance score for the scan (0-100)
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X PATCH "https://api.example.com/api/violations/viol_789xyz" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "false_positive",
+    "review_note": "This transaction was pre-authorized by compliance team"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('/api/violations/viol_789xyz', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    status: 'false_positive',
+    review_note: 'This transaction was pre-authorized by compliance team'
+  })
+});
+const result = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.patch(
+    'https://api.example.com/api/violations/viol_789xyz',
+    headers={'Authorization': 'Bearer YOUR_TOKEN'},
+    json={
+        'status': 'false_positive',
+        'review_note': 'This transaction was pre-authorized by compliance team'
+    }
+)
+result = response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "success": true,
+  "violation": {
+    "id": "viol_789xyz",
+    "status": "false_positive",
+    "reviewed_at": "2024-02-28T14:30:00Z"
+  },
+  "updated_score": 87.5
+}
+```
+</ResponseExample>
+
+## Bayesian Feedback Loop
+
+When you review a violation, the system automatically updates the parent rule's statistics:
+
+- **Approved violations** → Increments `approved_count` for the rule
+- **False positives** → Increments `false_positive_count` for the rule
+
+These counts are used to calculate rule accuracy scores:
+
+```
+accuracy = approved_count / (approved_count + false_positive_count)
+```
+
+This Bayesian feedback mechanism allows the system to:
+1. Learn which rules are most accurate over time
+2. Adjust confidence scores for future violations
+3. Prioritize high-accuracy rules in scan results
+4. Flag rules that generate excessive false positives for tuning
+
+## Score History Tracking
+
+Each review creates an entry in the scan's `score_history` array:
+
+```json
+{
+  "score": 87.5,
+  "timestamp": "2024-02-28T14:30:00Z",
+  "action": "false_positive",
+  "violation_id": "viol_789xyz"
+}
+```
+
+This enables compliance trend visualization and audit trails.
+
+## Compliance Score Recalculation
+
+The compliance score is automatically recalculated based on:
+- Total number of records scanned
+- Severity distribution of **active** violations (excluding false positives)
+- Weighted penalties: CRITICAL (10 points), HIGH (5 points), MEDIUM (2 points)
+
+Score formula:
+```
+score = max(0, 100 - totalPenalty)
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code: `VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, or `INTERNAL_ERROR`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Validation error details (only for `VALIDATION_ERROR`)
+</ResponseField>

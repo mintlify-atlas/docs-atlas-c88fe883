@@ -1,0 +1,231 @@
+---
+title: 'Rule Management'
+description: 'How to manage compliance rules, toggle activation, and understand rule quality'
+icon: 'sliders'
+---
+
+Yggdrasil rules are the heart of the compliance engine. This guide covers rule lifecycle management, activation controls, and quality scoring.
+
+## Rule Structure
+
+Each rule contains:
+
+| Field | Description |
+|-------|-------------|
+| `rule_id` | Unique identifier (e.g., `aml_rule_1`, `gdpr_consent`) |
+| `name` | Human-readable name |
+| `type` | Execution type: `single_transaction`, `aggregation`, `velocity`, `structuring`, `dormant_reactivation`, `round_amount` |
+| `severity` | `CRITICAL`, `HIGH`, or `MEDIUM` |
+| `threshold` | Numeric threshold value (optional) |
+| `time_window` | Time window in hours for windowed rules (optional) |
+| `conditions` | JSONB compound logic tree (`AND`/`OR` with leaf conditions) |
+| `policy_excerpt` | Quote from the regulatory document |
+| `policy_section` | Section reference (e.g., "Article 5(1)(f)") |
+| `is_active` | Boolean flag controlling whether the rule fires during scans |
+| `approved_count` | User-confirmed true positives (Bayesian feedback) |
+| `false_positive_count` | User-dismissed false positives (Bayesian feedback) |
+
+<Note>
+**Compound Conditions**: Rules support arbitrarily nested `AND`/`OR` logic trees. This allows multi-signal rules like "amount > 10000 AND transaction_type IN ['WIRE', 'DEBIT']".
+</Note>
+
+## Toggle Active/Inactive
+
+Navigate to `/audit/{id}/rules` to enable or disable rules before running a scan.
+
+**How It Works:**
+- All rules are **enabled by default** when you create an audit
+- Click the toggle switch next to any rule to disable it
+- Disabled rules (grayed out) are skipped during scan execution
+- You must have **at least 1 active rule** to run a scan
+
+**Use Cases:**
+- Disable noisy rules that produce too many false positives
+- Focus on specific regulatory requirements (e.g., only GDPR encryption rules)
+- Test new custom rules in isolation
+
+<Tip>
+Start with all rules enabled for your first scan. After reviewing results, disable rules that aren't relevant to your use case.
+</Tip>
+
+## Add Rules from PDF
+
+You can extract additional rules from a regulatory PDF after creating an audit.
+
+**Step-by-Step:**
+
+<Steps>
+  <Step title="Navigate to Policy Update">
+    From the dashboard, click **Update Policies** to open the policy sheet.
+  </Step>
+
+  <Step title="Upload PDF">
+    Click **Add Rules from PDF** and upload your regulatory document.
+
+    ```bash
+    POST /api/policies/ingest
+    ```
+
+    Yggdrasil uses Gemini 2.5 Flash to extract rules with the **Signal Specificity Framework**.
+  </Step>
+
+  <Step title="Review Extracted Rules">
+    AI extracts rules with compound conditions (multi-signal logic) to minimize false positives.
+
+    Each rule must meet a **minimum combined specificity of 2.0** — meaning rules combine multiple signals like:
+    - Behavioral (transaction type, amount)
+    - Temporal (time windows, velocity)
+    - Relational (cross-field comparisons)
+  </Step>
+
+  <Step title="Activate New Rules">
+    New rules are added as **inactive by default**. Toggle them on in the rule list before your next scan.
+  </Step>
+</Steps>
+
+<Note>
+**PDF Parsing Time**: Extraction takes 30-60 seconds depending on document length. Gemini uses unpdf for serverless-compatible parsing.
+</Note>
+
+## Add Rules from Prebuilt Packs
+
+Yggdrasil includes three prebuilt policy frameworks:
+
+### AML / FinCEN (11 rules)
+
+- **CTR Aggregation** — Currency Transaction Reports for amounts ≥ $10,000
+- **Structuring Detection** — Multiple sub-threshold transactions within time windows
+- **Velocity Limits** — Transaction frequency thresholds
+- **Dormant Reactivation** — Inactive accounts suddenly active
+- **Round Amount Patterns** — Suspicious even-dollar transactions
+- **Balance Mismatches** — oldBalance + amount ≠ newBalance
+- **High-Risk Rapid Movement** — Funds moving quickly through accounts
+
+### GDPR (14+ categories)
+
+- **Consent Management** — Explicit consent required for processing
+- **Data Protection Officer** — DPO required for certain processing activities
+- **Encryption at Rest** — Personal data must be encrypted
+- **Marketing Consent** — Separate opt-in for marketing communications
+- **Privacy Impact Assessments** — Required for high-risk processing
+- **Right of Access** — Provide data within 30 days of request
+- **Right of Erasure** — Delete data upon request
+- **Third-Country Transfers** — Adequate safeguards required
+
+### SOC2 (5 trust principles)
+
+- **Security** — Logical access controls, MFA, encryption
+- **Availability** — System uptime and disaster recovery
+- **Confidentiality** — Data classification and access restrictions
+- **Processing Integrity** — Data accuracy and completeness
+- **Privacy** — Notice, choice, collection limitation
+
+**To Load a Prebuilt Pack:**
+
+```bash
+POST /api/policies/prebuilt
+{
+  "policy_type": "aml" | "gdpr" | "soc2"
+}
+```
+
+Prebuilt rules load instantly (no AI extraction required).
+
+## Understanding Rule Quality Scores
+
+Each violation includes a **confidence score** (0-1) computed from multiple signals:
+
+```typescript
+confidence = rule_quality              // Structural quality of the rule
+           + signal_specificity_boost  // Bonus for compound AND conditions
+           + statistical_anomaly       // How unusual the value is vs. dataset
+           + bayesian_precision        // (1 + TP) / (2 + TP + FP)
+           + criticality_weight        // CRITICAL > HIGH > MEDIUM
+```
+
+### Rule Quality Components
+
+**1. Rule Quality Score**
+- Measures structural quality of the rule definition
+- Factors: condition complexity, specificity, threshold sensitivity
+- Higher quality = more specific, less prone to noise
+
+**2. Signal Specificity Boost**
+- Rules with compound `AND` conditions get a boost
+- Single-threshold rules (e.g., "amount > 10000") get no boost
+- Multi-signal rules (e.g., "amount > 10000 AND type = WIRE AND recipient_country = offshore") get higher scores
+
+**3. Statistical Anomaly**
+- How unusual is this value compared to the dataset distribution?
+- Example: A $1M transaction in a dataset where 99% of transactions are <$1K gets a high anomaly score
+
+**4. Bayesian Precision**
+- Uses historical feedback from your reviews
+- Formula: `precision = (1 + approved_count) / (2 + approved_count + false_positive_count)`
+- Rules with many false positives lose confidence over time
+- Rules with consistent true positives gain confidence
+
+**5. Criticality Weight**
+- `CRITICAL` violations get the highest weight
+- `HIGH` violations get 0.75x weight
+- `MEDIUM` violations get 0.5x weight
+
+<Note>
+**Bayesian Feedback Loop**: The system improves with use. Review violations (approve or dismiss) to train rule precision scores for future scans.
+</Note>
+
+## Rule Execution Types
+
+Yggdrasil routes rules by `type` field, not `time_window`.
+
+### Single-Transaction Rules
+
+- **Type**: `single_transaction`
+- **Execution**: Evaluate conditions per record
+- **Use Cases**: Threshold checks, field validations, cross-field comparisons
+- **Example**: "Transactions over $10K require additional documentation"
+
+### Windowed Rules
+
+- **Types**: `aggregation`, `velocity`, `structuring`, `dormant_reactivation`, `round_amount`
+- **Execution**: Group records by account, evaluate within time windows
+- **Use Cases**: Velocity limits, structuring detection, dormant account alerts
+- **Example**: "More than 5 transactions in 24 hours triggers a review"
+
+**Windowed Rule Execution:**
+
+1. Group records by `account` field
+2. For each account, create time windows (e.g., 24-hour rolling windows)
+3. Aggregate within each window (sum, count, average)
+4. Check if aggregated value exceeds threshold
+
+<Tip>
+Use windowed rules for behavioral patterns (velocity, structuring). Use single-transaction rules for per-record checks (encryption, consent).
+</Tip>
+
+## Best Practices
+
+1. **Start Broad, Then Narrow**
+   - Enable all rules for your first scan
+   - Disable noisy rules after reviewing results
+   - Focus on high-severity, high-confidence violations
+
+2. **Review Regularly**
+   - Approve true positives to boost rule precision
+   - Dismiss false positives to reduce noise
+   - Your feedback trains the Bayesian model
+
+3. **Combine Prebuilt + Custom**
+   - Start with prebuilt frameworks (AML, GDPR, SOC2)
+   - Add custom rules from your internal policies
+   - Test new rules on historical data before production
+
+4. **Monitor Rule Performance**
+   - Track precision/recall metrics in the evidence drawer
+   - Disable rules with &lt;50% precision
+   - Investigate rules with high false positive rates
+
+## What's Next?
+
+- [Interpreting Violations](/guides/interpreting-violations) — Understand severity levels, confidence scores, and evidence grids
+- [Audit Workflow](/guides/audit-workflow) — Complete end-to-end audit process

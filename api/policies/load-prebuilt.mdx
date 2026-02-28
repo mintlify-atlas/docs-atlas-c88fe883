@@ -1,0 +1,248 @@
+---
+title: "Load Prebuilt Policy"
+api: "POST /api/policies/prebuilt"
+description: "Load a prebuilt policy pack with ready-made compliance rules for AML, GDPR, or SOC2"
+---
+
+## Overview
+
+This endpoint creates a new policy using prebuilt rule sets for common compliance frameworks. Choose from Anti-Money Laundering (AML), GDPR data protection, or SOC2 security controls.
+
+## Authentication
+
+Requires a valid session token. Returns `401 UNAUTHORIZED` if not authenticated.
+
+## Request
+
+<ParamField body="type" type="enum" required>
+  Policy pack type to load.
+  
+  Options:
+  - `aml` - Anti-Money Laundering compliance rules
+  - `gdpr` - GDPR data protection and privacy rules
+  - `soc2` - SOC2 security and operational controls
+</ParamField>
+
+### Content Type
+
+`application/json`
+
+### Example Request
+
+```bash
+curl -X POST https://yourdomain.com/api/policies/prebuilt \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=your_session_token" \
+  -d '{
+    "type": "aml"
+  }'
+```
+
+## Response
+
+<ResponseField name="policy" type="object">
+  The created policy with prebuilt rules
+  
+  <ResponseField name="id" type="string">
+    UUID of the created policy
+  </ResponseField>
+  
+  <ResponseField name="name" type="string">
+    Policy name (e.g., "AML Compliance Policy")
+  </ResponseField>
+  
+  <ResponseField name="type" type="string">
+    Always `prebuilt` for prebuilt policies
+  </ResponseField>
+  
+  <ResponseField name="prebuilt_type" type="string">
+    The selected prebuilt type: `aml`, `gdpr`, or `soc2`
+  </ResponseField>
+  
+  <ResponseField name="rules_count" type="number">
+    Total number of rules in the policy
+  </ResponseField>
+  
+  <ResponseField name="rules" type="array">
+    Array of prebuilt compliance rules
+    
+    <ResponseField name="rule_id" type="string">
+      Unique rule identifier in UPPER_SNAKE_CASE
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Human-readable rule name
+    </ResponseField>
+    
+    <ResponseField name="type" type="string">
+      Rule category (e.g., `structuring`, `velocity`, `encryption`)
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Detailed description of the rule
+    </ResponseField>
+    
+    <ResponseField name="severity" type="enum">
+      Rule severity: `CRITICAL`, `HIGH`, or `MEDIUM`
+    </ResponseField>
+    
+    <ResponseField name="threshold" type="number | null">
+      Numeric threshold for threshold-based rules
+    </ResponseField>
+    
+    <ResponseField name="time_window" type="number | null">
+      Time window in hours for temporal rules
+    </ResponseField>
+    
+    <ResponseField name="conditions" type="object">
+      Rule evaluation logic with recursive AND/OR conditions
+    </ResponseField>
+    
+    <ResponseField name="policy_excerpt" type="string">
+      Reference to the compliance regulation
+    </ResponseField>
+    
+    <ResponseField name="policy_section" type="string">
+      Section reference (e.g., "31 CFR § 1010.314")
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="created_at" type="string">
+    ISO 8601 timestamp of policy creation
+  </ResponseField>
+</ResponseField>
+
+### Success Response
+
+```json
+{
+  "policy": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "AML Compliance Policy",
+    "type": "prebuilt",
+    "prebuilt_type": "aml",
+    "rules_count": 12,
+    "rules": [
+      {
+        "rule_id": "STRUCTURING_PATTERN",
+        "name": "Transaction Structuring Detection",
+        "type": "structuring",
+        "description": "Detects multiple transactions just below reporting threshold",
+        "severity": "CRITICAL",
+        "threshold": 10000,
+        "time_window": 24,
+        "conditions": {
+          "AND": [
+            {
+              "field": "amount",
+              "operator": "greater_than",
+              "value": 9000
+            },
+            {
+              "field": "amount",
+              "operator": "less_than",
+              "value": 10000
+            }
+          ]
+        },
+        "policy_excerpt": "31 CFR § 1010.314 - Structured transactions to evade BSA reporting",
+        "policy_section": "31 CFR § 1010.314"
+      }
+    ],
+    "created_at": "2026-02-28T10:30:00Z"
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code identifier
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Validation error details (for VALIDATION_ERROR)
+</ResponseField>
+
+### 400 Bad Request
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request body",
+  "details": [
+    {
+      "code": "invalid_enum_value",
+      "expected": ["aml", "gdpr", "soc2"],
+      "received": "hipaa",
+      "path": ["type"],
+      "message": "Invalid enum value. Expected 'aml' | 'gdpr' | 'soc2', received 'hipaa'"
+    }
+  ]
+}
+```
+
+### 401 Unauthorized
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Authentication required"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to create policy"
+}
+```
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to insert rules"
+}
+```
+
+## Prebuilt Policy Types
+
+### AML (Anti-Money Laundering)
+
+Includes rules for:
+- Transaction structuring detection
+- Rapid fund movement patterns
+- High-risk jurisdiction monitoring
+- Unusual transaction patterns
+- Smurfing detection
+
+### GDPR (General Data Protection Regulation)
+
+Includes rules for:
+- Data retention limits
+- Consent verification
+- Right to erasure compliance
+- Cross-border data transfer restrictions
+- Encryption requirements
+
+### SOC2 (Service Organization Control 2)
+
+Includes rules for:
+- Access control violations
+- Multi-factor authentication enforcement
+- Encryption at rest and in transit
+- Audit logging requirements
+- Password policy compliance
+
+## Notes
+
+- All rules are set to `is_active: true` by default
+- Rules can be toggled or modified after creation using the rules management endpoints
+- The policy `type` field is set to `prebuilt` to distinguish from PDF-ingested policies
+- The `prebuilt_type` field stores the original pack type for reference

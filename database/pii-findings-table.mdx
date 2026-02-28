@@ -1,0 +1,151 @@
+---
+title: PII Findings Table
+description: Schema for PII detection results with remediation suggestions
+---
+
+## Overview
+
+The `pii_findings` table stores PII (Personally Identifiable Information) detection results from uploaded datasets. Findings are initially linked by `upload_id`, then associated with a `scan_id` after scan completion.
+
+## Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID, PK | Unique finding identifier |
+| `scan_id` | UUID, FK, nullable | Linked after scan creation |
+| `upload_id` | UUID | Upload that was scanned for PII |
+| `column_name` | text | Column containing PII |
+| `pii_type` | text | Type of PII detected (see below) |
+| `severity` | text | `'CRITICAL'`, `'HIGH'`, `'MEDIUM'` |
+| `confidence` | numeric | Detection confidence (0–1) |
+| `match_count` | integer | Rows with potential PII |
+| `total_rows` | integer | Total rows analyzed |
+| `sample_values` | jsonb | Masked sample values |
+| `detection_query` | text | Regex pattern used |
+| `violation_text` | text | PII risk description |
+| `suggestion` | text | Remediation: `'hash'`, `'encrypt'`, `'remove'` |
+| `status` | text | `'open'`, `'resolved'`, `'ignored'` |
+| `created_at` | timestamptz | Timestamp when finding was detected |
+| `resolved_at` | timestamptz | Timestamp when resolved |
+| `resolved_by` | UUID | User who resolved the finding |
+
+## PII Types Detected
+
+The `pii_type` field identifies the category of PII found:
+
+| PII Type | Description | Example Pattern |
+|---|---|---|
+| `email` | Email addresses | `user@example.com` |
+| `phone` | Phone numbers | `(555) 123-4567` |
+| `ssn` | Social Security Numbers | `123-45-6789` |
+| `name` | Person names | `John Doe` |
+| `address` | Physical addresses | `123 Main St, City, ST 12345` |
+| `credit_card` | Credit card numbers | `4532-1234-5678-9010` |
+| `ip_address` | IP addresses | `192.168.1.1` |
+| `date_of_birth` | Dates of birth | `1990-01-01` |
+| `passport` | Passport numbers | `AB1234567` |
+| `national_id` | National ID numbers | Country-specific formats |
+| `bank_account` | Bank account numbers | Account number formats |
+
+## Upload ID vs Scan ID Linking
+
+<Info>
+**Why Two IDs?**
+
+PII detection runs at **upload time** (before a scan exists), so findings are initially stored with only `upload_id`. After a scan is created, the findings are linked to `scan_id` for persistent reference.
+</Info>
+
+### Linking Flow
+
+1. **Upload Data** → CSV uploaded, assigned `upload_id`
+2. **Scan for PII** → Findings created with `upload_id`, `scan_id = null`
+3. **Create Scan** → Scan created with `id = scan_id`
+4. **Link Findings** → Update findings: `SET scan_id = scan_id WHERE upload_id = upload_id`
+
+## Sample Values JSONB
+
+The `sample_values` field stores masked examples of detected PII.
+
+### Example Sample Values
+
+```json
+[
+  "j***@example.com",
+  "s***@company.org",
+  "a***@domain.net"
+]
+```
+
+Sample values are:
+- **Limited to 3-5 examples** to avoid exposing sensitive data
+- **Masked** to show pattern while protecting privacy
+- **Used in UI** to help users confirm detection accuracy
+
+## Remediation Suggestions
+
+The `suggestion` field provides a recommended remediation action:
+
+| Suggestion | When to Use | Description |
+|---|---|---|
+| `hash` | SSN, credit cards, account numbers | One-way hash (SHA-256) for lookup without reversibility |
+| `encrypt` | Names, addresses, DOB | Reversible encryption for authorized access |
+| `remove` | Email (if not needed), phone | Delete column if not required for compliance scan |
+
+<Warning>
+**PII Detection is Informational**
+
+PII findings are surfaced as warnings, but **the scan proceeds regardless**. The user is informed of potential PII exposure and can take remediation action before running the compliance scan.
+</Warning>
+
+## Detection Method
+
+PII detection is **regex-based** and samples **20 rows** from each column. This provides:
+
+- **Fast detection** without scanning entire dataset
+- **Low false positive rate** due to pattern-based matching
+- **High recall** for common PII formats (email, phone, SSN, credit card)
+
+### Example Detection Query
+
+```regex
+# Email detection
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+
+# SSN detection
+\b\d{3}-\d{2}-\d{4}\b
+
+# Credit card detection
+\b(?:\d{4}[- ]?){3}\d{4}\b
+```
+
+## Status Lifecycle
+
+| Status | Description |
+|---|---|
+| `open` | PII detected, awaiting action |
+| `resolved` | User has taken remediation action (hash, encrypt, remove) |
+| `ignored` | User acknowledges but chooses not to remediate |
+
+## Relationships
+
+- **Foreign Key to `scans`** (nullable) — Linked after scan creation
+- **References `upload_id`** — References in-memory upload store
+- **Foreign Key to `auth.users` (via `resolved_by`)** — Tracks who resolved the finding
+
+## Example Query
+
+### Get All Open PII Findings for a Scan
+
+```sql
+SELECT 
+  column_name,
+  pii_type,
+  severity,
+  match_count,
+  total_rows,
+  suggestion
+FROM pii_findings
+WHERE scan_id = 'scan-uuid'
+  AND status = 'open'
+ORDER BY severity DESC, match_count DESC;
+```

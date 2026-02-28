@@ -1,0 +1,544 @@
+---
+title: GDPR Compliance Pack
+description: 15 prebuilt rules for EU General Data Protection Regulation compliance
+---
+
+The **GDPR Compliance Pack** provides 15 production-ready rules based on the EU General Data Protection Regulation, covering consent management, encryption, DPO requirements, data subject rights, and cross-border data transfers.
+
+Each rule includes historical fines, breach examples, and GDPR article references.
+
+## Rule Categories
+
+Rules are organized into 14 categories aligned with GDPR principles:
+
+<AccordionGroup>
+  <Accordion title="Consent" icon="hand">
+    Conditions for consent, child consent, and withdrawal of consent.
+    
+    - **Consent Status Validation** (Article 6)
+    - **Children Data Protections** (Article 8)
+  </Accordion>
+  
+  <Accordion title="Data Protection Officer" icon="user-tie">
+    Designation, position, and tasks of the DPO.
+    
+    - **DPO Designation Check** (Article 37)
+  </Accordion>
+  
+  <Accordion title="Email Marketing" icon="envelope">
+    Opt-out mechanisms and lawfulness of marketing communications.
+    
+    - **Marketing Opt-Out Mechanism** (Article 21)
+  </Accordion>
+  
+  <Accordion title="Encryption" icon="key">
+    Security of processing and encryption of personal data.
+    
+    - **At-Rest Encryption Requirement** (Article 32)
+    - **In-Transit Encryption (TLS)** (Article 32)
+  </Accordion>
+  
+  <Accordion title="Personal Data" icon="database">
+    Definition and processing of personal and special category data.
+    
+    - **Special Category Data Protection** (Article 9)
+  </Accordion>
+  
+  <Accordion title="Privacy by Design" icon="shield">
+    Data protection by design and by default.
+    
+    - **Privacy by Design Default** (Article 25)
+  </Accordion>
+  
+  <Accordion title="Privacy Impact Assessment" icon="clipboard-check">
+    Data protection impact assessments (DPIA) and prior consultation.
+    
+    - **DPIA Requirement Validation** (Article 35)
+  </Accordion>
+  
+  <Accordion title="Processing" icon="gears">
+    Principles, lawfulness, and conditions of processing.
+    
+    - **Lawful Basis Documentation** (Article 6)
+  </Accordion>
+  
+  <Accordion title="Records of Processing Activities" icon="book">
+    Maintenance of records of processing activities (ROPA).
+    
+    - **Records of Processing (ROPA)** (Article 30)
+  </Accordion>
+  
+  <Accordion title="Right of Access" icon="eye">
+    Right of access by the data subject and information to be provided.
+    
+    - **Right to Data Access (DSAR)** (Article 15)
+  </Accordion>
+  
+  <Accordion title="Right to be Forgotten" icon="eraser">
+    Right to erasure and restriction of processing.
+    
+    - **Data Retention Period Enforcement** (Article 5)
+    - **Right to Be Forgotten (Erasure)** (Article 17)
+  </Accordion>
+  
+  <Accordion title="Right to be Informed" icon="circle-info">
+    Transparency and information provided to data subjects.
+  </Accordion>
+  
+  <Accordion title="Third Countries" icon="globe">
+    Transfers of personal data to third countries or international organizations.
+    
+    - **Third Country Transfer Basis** (Articles 44-49)
+  </Accordion>
+</AccordionGroup>
+
+## Detailed Rule Reference
+
+### Consent
+
+<AccordionGroup>
+  <Accordion title="GDPR-002 - Consent Status Validation" icon="hand">
+    **Severity:** CRITICAL  
+    **Article:** 6(1)(a) — Lawfulness of Processing
+    
+    **What it detects:**
+    
+    Flags any data processing operation where consent status is still `pending` (not explicitly granted).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "consent_status", "operator": "equals", "value": "pending" }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Processing requires valid consent.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €50M (Google case for lack of transparency/consent)
+    - **Breach Example:** Ad-tech firm processing location data without clear opt-in
+  </Accordion>
+  
+  <Accordion title="GDPR-007 - Children Data Protections" icon="child">
+    **Severity:** CRITICAL  
+    **Threshold:** Age < 16  
+    **Article:** 8 — Child's Consent
+    
+    **What it detects:**
+    
+    Flags records where the data subject is under 16 years old (requires parental consent).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "age", "operator": "less_than", "value": 16 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Children's data requires parental consent.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €345M (TikTok — failing to protect children's data)
+    - **Breach Example:** Gaming site collecting emails of 12-year-olds without age verification
+  </Accordion>
+</AccordionGroup>
+
+### Encryption
+
+<AccordionGroup>
+  <Accordion title="GDPR-003 - At-Rest Encryption Requirement" icon="lock">
+    **Severity:** CRITICAL  
+    **Article:** 32 — Security of Processing
+    
+    **What it detects:**
+    
+    Identifies tables or columns containing personal data that are not encrypted at rest.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "encrypted", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Personal data must be encrypted at rest.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €18M (British Airways breach — lack of security measures)
+    - **Breach Example:** Hospital database leaked patient records because PII was stored in plain text
+  </Accordion>
+  
+  <Accordion title="GDPR-010 - In-Transit Encryption (TLS)" icon="shield-halved">
+    **Severity:** HIGH  
+    **Article:** 32 — Security of Processing
+    
+    **What it detects:**
+    
+    Flags data transmission channels where TLS is not enabled (HTTP instead of HTTPS).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "tls_enabled", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Personal data in transit must be encrypted.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €10M (Telecom company — lack of encryption for subscriber data packets)
+    - **Breach Example:** Web form submitting PII via HTTP instead of HTTPS
+  </Accordion>
+</AccordionGroup>
+
+### Personal Data
+
+<AccordionGroup>
+  <Accordion title="GDPR-004 - Special Category Data Protection" icon="user-lock">
+    **Severity:** CRITICAL  
+    **Article:** 9 — Processing of Special Categories
+    
+    **What it detects:**
+    
+    Flags records containing special category data (health, biometric, political affiliation) that require explicit consent.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "data_category", "operator": "contains", "value": "special_category" }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Special category data requires explicit consent.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €35M (H&M case for processing sensitive employee data)
+    - **Breach Example:** Health app sharing biometric data with third parties without specific Art 9 consent
+  </Accordion>
+</AccordionGroup>
+
+### Data Subject Rights
+
+<AccordionGroup>
+  <Accordion title="GDPR-001 - Data Retention Period Enforcement" icon="clock">
+    **Severity:** HIGH  
+    **Article:** 5(1)(e) — Storage Limitation
+    
+    **What it detects:**
+    
+    Identifies records marked for deletion that have exceeded the retention period.
+    
+    **Conditions:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "deletion_requested", "operator": "equals", "value": true },
+        { "field": "created_at", "operator": "exists", "value": null }
+      ]
+    }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Personal data must not be retained beyond necessary period.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €14.5M (Average for systemic retention failure)
+    - **Breach Example:** Real estate company fined for storing tenant data indefinitely
+  </Accordion>
+  
+  <Accordion title="GDPR-005 - Right to Data Access (DSAR)" icon="folder-open">
+    **Severity:** MEDIUM  
+    **Article:** 15 — Right of Access
+    
+    **What it detects:**
+    
+    Identifies data that should be retrievable for data subject access requests but is not properly indexed or exportable.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "is_retrievable", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Data subjects have right to access their data.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €1M (Amazon — failing to provide full access to data)
+    - **Breach Example:** SaaS provider unable to export all user data during access request
+  </Accordion>
+  
+  <Accordion title="GDPR-006 - Right to Be Forgotten (Erasure)" icon="trash">
+    **Severity:** HIGH  
+    **Article:** 17 — Right to Erasure
+    
+    **What it detects:**
+    
+    Checks for records marked for deletion but not yet erased (should be deleted within 30 days).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "deletion_requested", "operator": "equals", "value": true }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Check for records marked for deletion but not yet erased.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €600k (Google Spain — "Right to be Forgotten" in search results)
+    - **Breach Example:** Bank failed to delete marketing profile after user closed account
+  </Accordion>
+</AccordionGroup>
+
+### Processing & Documentation
+
+<AccordionGroup>
+  <Accordion title="GDPR-009 - Lawful Basis Documentation" icon="file-contract">
+    **Severity:** HIGH  
+    **Article:** 6 — Lawfulness of Processing
+    
+    **What it detects:**
+    
+    Flags data processing operations that do not have a documented lawful basis (Consent, Contract, Legal Obligation, etc.).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "lawful_basis", "operator": "not_exists", "value": null }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > All processing must have documented lawful basis.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €20M (General fine for lack of Art 6 justification)
+    - **Breach Example:** Company processing payroll data without defining a legal basis in their ROPA
+  </Accordion>
+  
+  <Accordion title="GDPR-013 - Records of Processing (ROPA)" icon="list">
+    **Severity:** MEDIUM  
+    **Article:** 30 — Records of Processing Activities
+    
+    **What it detects:**
+    
+    Flags processing activities that do not have a corresponding ROPA entry.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "ropa_entry_exists", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Maintain a record of processing activities.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €30k (Incomplete or missing ROPA)
+    - **Breach Example:** Logistics firm unable to provide processing logs during audit
+  </Accordion>
+</AccordionGroup>
+
+### Organizational Requirements
+
+<AccordionGroup>
+  <Accordion title="GDPR-011 - DPO Designation Check" icon="id-badge">
+    **Severity:** MEDIUM  
+    **Article:** 37 — Designation of the DPO
+    
+    **What it detects:**
+    
+    Flags organizations processing sensitive data at scale that have not designated a Data Protection Officer.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "dpo_assigned", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Organizations must designate a DPO in specific cases.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €50k (Average for failing to appoint DPO when required)
+    - **Breach Example:** Security firm fined for not appointing DPO despite large-scale monitoring
+  </Accordion>
+  
+  <Accordion title="GDPR-012 - DPIA Requirement Validation" icon="magnifying-glass-chart">
+    **Severity:** HIGH  
+    **Article:** 35 — Data Protection Impact Assessment
+    
+    **What it detects:**
+    
+    Flags high-risk processing activities (e.g., facial recognition, large-scale profiling) that lack a completed DPIA.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "dpia_completed", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Impact assessment required for high-risk processing.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €200k (Failing to conduct DPIA for facial recognition)
+    - **Breach Example:** Retailer deploying AI tracking without preliminary impact study
+  </Accordion>
+</AccordionGroup>
+
+### Marketing & Privacy Design
+
+<AccordionGroup>
+  <Accordion title="GDPR-008 - Marketing Opt-Out Mechanism" icon="envelope-open-text">
+    **Severity:** MEDIUM  
+    **Article:** 21 — Right to Object
+    
+    **What it detects:**
+    
+    Checks that all marketing communications include a one-click unsubscribe mechanism.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "marketing_consent", "operator": "equals", "value": true }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Email communications require opt-out mechanism.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €400k (Deliveroo — lack of opt-out in promotional emails)
+    - **Breach Example:** E-commerce site ignoring unsubscribes for its weekly newsletter
+  </Accordion>
+  
+  <Accordion title="GDPR-014 - Privacy by Design Default" icon="sliders">
+    **Severity:** MEDIUM  
+    **Article:** 25 — Privacy by Design
+    
+    **What it detects:**
+    
+    Flags systems that do not use maximum privacy settings by default (e.g., profiles set to "public" on registration).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "privacy_by_default", "operator": "equals", "value": false }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Implement data protection by design and default.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €100k (Software vendor — settings not private by default)
+    - **Breach Example:** Social app making profiles public automatically upon registration
+  </Accordion>
+</AccordionGroup>
+
+### Cross-Border Transfers
+
+<AccordionGroup>
+  <Accordion title="GDPR-015 - Third Country Transfer Basis" icon="plane-departure">
+    **Severity:** CRITICAL  
+    **Article:** 44–49 — Transfers to Third Countries
+    
+    **What it detects:**
+    
+    Flags data transfers to countries outside the EEA that lack a valid legal basis (Standard Contractual Clauses, Adequacy Decision, etc.).
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "transfer_basis", "operator": "not_exists", "value": null }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Transfers to third countries require legal basis.
+    
+    **Historical Context:**
+    
+    - **Average Fine:** €1.2B (Meta — transferring data to US without valid basis)
+    - **Breach Example:** Cloud provider moving backup data to non-compliant region
+  </Accordion>
+</AccordionGroup>
+
+## Rule Summary Table
+
+| Rule ID | Name | Severity | Article | Category |
+|---------|------|----------|---------|----------|
+| GDPR-001 | Data Retention Period Enforcement | HIGH | 5(1)(e) | Right to be Forgotten |
+| GDPR-002 | Consent Status Validation | CRITICAL | 6(1)(a) | Consent |
+| GDPR-003 | At-Rest Encryption Requirement | CRITICAL | 32 | Encryption |
+| GDPR-004 | Special Category Data Protection | CRITICAL | 9 | Personal Data |
+| GDPR-005 | Right to Data Access (DSAR) | MEDIUM | 15 | Right of Access |
+| GDPR-006 | Right to Be Forgotten (Erasure) | HIGH | 17 | Right to be Forgotten |
+| GDPR-007 | Children Data Protections | CRITICAL | 8 | Consent |
+| GDPR-008 | Marketing Opt-Out Mechanism | MEDIUM | 21 | Email Marketing |
+| GDPR-009 | Lawful Basis Documentation | HIGH | 6 | Processing |
+| GDPR-010 | In-Transit Encryption (TLS) | HIGH | 32 | Encryption |
+| GDPR-011 | DPO Designation Check | MEDIUM | 37 | DPO |
+| GDPR-012 | DPIA Requirement Validation | HIGH | 35 | Privacy Impact Assessment |
+| GDPR-013 | Records of Processing (ROPA) | MEDIUM | 30 | ROPA |
+| GDPR-014 | Privacy by Design Default | MEDIUM | 25 | Privacy by Design |
+| GDPR-015 | Third Country Transfer Basis | CRITICAL | 44–49 | Third Countries |
+
+## Using the GDPR Pack
+
+1. **Select GDPR Framework** — Choose "GDPR" when creating a new audit
+2. **Review Rules** — All 15 rules are loaded and active by default
+3. **Toggle Rules** — Disable any rules not applicable to your data processing activities
+4. **Upload Data** — Upload your dataset (must include fields like `consent_status`, `encrypted`, `age`, etc.)
+5. **Confirm Mapping** — Approve the AI-suggested column mappings
+6. **Run Scan** — Execute the compliance scan
+7. **Review Violations** — Violations include GDPR article references, historical fines, and remediation steps
+
+<Note>
+All GDPR rules use **deterministic logic** — no AI models are used during enforcement. Explanations reference specific GDPR articles and are generated from templates.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AML Compliance Pack" icon="money-bill-trend-up" href="/frameworks/aml">
+    Explore the 11 AML/FinCEN rules for financial transaction monitoring
+  </Card>
+  <Card title="SOC2 Compliance Pack" icon="lock" href="/frameworks/soc2">
+    Explore the 9 SOC2 rules for trust service criteria
+  </Card>
+  <Card title="Custom PDF Upload" icon="file-pdf" href="/frameworks/custom-pdf">
+    Upload your own regulatory documents
+  </Card>
+  <Card title="Explainability" icon="lightbulb" href="/engine/explainability">
+    Learn how violation explanations are generated
+  </Card>
+</CardGroup>

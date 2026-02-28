@@ -1,0 +1,131 @@
+---
+title: "Run Scan"
+api: "POST /api/scan/run"
+description: "Trigger a compliance scan with a policy against uploaded data"
+---
+
+## Overview
+
+Initiates a compliance scan by executing policy rules against uploaded financial data. The scan runs synchronously and processes up to 50,000 records, identifying violations and calculating a compliance score.
+
+## Request Body
+
+<ParamField body="policy_id" type="string" required>
+  The ID of the compliance policy containing the rules to execute
+</ParamField>
+
+<ParamField body="upload_id" type="string" required>
+  The ID of the uploaded data file to scan. Must reference a valid upload from `/api/upload`
+</ParamField>
+
+<ParamField body="mapping_id" type="string" required>
+  The ID of the column mapping configuration. Must be confirmed via `/api/mapping/confirm` before scanning
+</ParamField>
+
+<ParamField body="audit_id" type="string">
+  Optional audit identifier for grouping related scans
+</ParamField>
+
+<ParamField body="audit_name" type="string">
+  Optional human-readable name for the audit
+</ParamField>
+
+## Response
+
+<ResponseField name="scan_id" type="string" required>
+  Unique identifier for the created scan. Use this to poll scan status via `/api/scan/{id}`
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Initial scan status. Always returns `"running"` even though the scan completes synchronously
+</ResponseField>
+
+## Example Request
+
+```json
+{
+  "policy_id": "550e8400-e29b-41d4-a716-446655440000",
+  "upload_id": "123e4567-e89b-12d3-a456-426614174000",
+  "mapping_id": "789e0123-e45b-67c8-d901-234567890123",
+  "audit_name": "Q1 2024 Compliance Audit"
+}
+```
+
+## Example Response
+
+```json
+{
+  "scan_id": "abc12345-def6-7890-ghij-klmnopqrstuv",
+  "status": "running"
+}
+```
+
+## Error Responses
+
+### 400 Bad Request
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request body",
+  "details": [
+    {
+      "path": ["policy_id"],
+      "message": "Required"
+    }
+  ]
+}
+```
+
+### 404 Not Found - Missing Mapping
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Mapping not found. Confirm mapping first."
+}
+```
+
+### 404 Not Found - Missing Upload
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Upload not found. Upload data first."
+}
+```
+
+### 404 Not Found - No Rules
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "No rules found for this policy."
+}
+```
+
+## Scan Process
+
+The endpoint performs the following operations:
+
+1. **Validates Request** - Ensures all required parameters are present and valid
+2. **Retrieves Resources** - Fetches mapping configuration, uploaded data, and active policy rules
+3. **Creates Scan Record** - Initializes a scan record in the database with `status: "running"`
+4. **Executes Rules** - Runs all active rules against the data using the RuleExecutor engine
+5. **Calculates Score** - Computes compliance score based on violations and severity
+6. **Persists Violations** - Saves detected violations in batches (2,500 per batch, 5 concurrent batches)
+7. **Updates Status** - Marks scan as `completed` with final metrics
+8. **Links PII Findings** - Associates any PII findings from the upload with this scan
+
+## Performance
+
+- Processes up to **50,000 records** per scan
+- Typical execution time: **< 5 seconds** for large datasets
+- Uses concurrent batching for violation persistence (5 parallel batches)
+
+## Related Endpoints
+
+- [Get Scan Status](/api/scan/get-status) - Poll scan status and results
+- [Scan History](/api/scan/scan-history) - List all completed scans
+- [Upload Data](/api/data/upload-csv) - Upload financial data files
+- [Confirm Mapping](/api/data/confirm-mapping) - Confirm column mappings before scanning

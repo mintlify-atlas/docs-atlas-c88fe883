@@ -1,0 +1,418 @@
+---
+title: 'Bayesian Feedback Loop'
+description: 'How user reviews improve rule precision over time using Bayesian inference'
+---
+
+## Overview
+
+Yggdrasil learns from your reviews. Every time you **approve** or **dismiss** a violation, the system updates a per-rule precision model using Bayesian inference:
+
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+Rules that consistently produce false positives **lose confidence** over time. Rules that catch real issues **gain confidence**. This feedback loop makes the next scan better without retraining any models.
+
+## The Problem: Cold Start
+
+New rules have no historical data. Traditional ML approaches require:
+- Hundreds of labeled examples
+- Model retraining
+- A/B testing
+- Manual threshold tuning
+
+Yggdrasil solves this with **Bayesian priors**:
+- New rules start with a **precision of 0.5** (neutral)
+- The first review immediately shifts confidence
+- No "warm-up" period — rules fire from day one
+
+## The Formula
+
+```typescript
+// From rule-executor.ts:96-105
+const tp = rule.approved_count || 0;
+const fp = rule.false_positive_count || 0;
+const historicalPrecision = (1 + tp) / (2 + tp + fp);
+
+const reviewCount = tp + fp;
+const historyWeight = Math.min(0.7, reviewCount / 20);
+score = (score * (1 - historyWeight)) + (historicalPrecision * historyWeight);
+```
+
+### Components
+
+1. **True Positives (TP)**: User clicked "Approve" → violation was correct
+2. **False Positives (FP)**: User clicked "Dismiss" → violation was wrong
+3. **Bayesian Priors**: `+1` to numerator, `+2` to denominator (Beta distribution)
+4. **History Weight**: Increases with review count (caps at 70%)
+
+### Why Bayesian?
+
+**Problem**: Without priors, a rule with 1 TP and 0 FP would have 100% precision.
+
+**Bayesian solution**: Add pseudo-counts to smooth the estimate:
+
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+This is equivalent to starting with a **Beta(1, 1) prior** (uniform distribution over [0, 1]).
+
+#### Example: Early Reviews
+
+| TP | FP | Precision (naive) | Precision (Bayesian) |
+|----|----|--------------------|----------------------|
+| 1  | 0  | 1.00 (overconfident) | 0.67 (realistic) |
+| 2  | 0  | 1.00 (overconfident) | 0.75 |
+| 0  | 1  | 0.00 (underconfident) | 0.33 |
+| 5  | 1  | 0.83 | 0.75 |
+| 10 | 2  | 0.83 | 0.79 |
+
+Bayesian smoothing prevents extreme confidence from small sample sizes.
+
+## Review Flow
+
+### 1. User Reviews Violation
+
+In the violation detail page, the user clicks:
+- **Approve** → True positive
+- **Dismiss** → False positive
+
+### 2. API Updates Counters
+
+```typescript
+// From /api/violations/[id]/route.ts (pseudocode)
+if (action === 'approve') {
+    await supabase.rpc('increment_rule_stat', {
+        target_policy_id: violation.policy_id,
+        target_rule_id: violation.rule_id,
+        stat_column: 'approved_count'
+    });
+} else if (action === 'dismiss') {
+    await supabase.rpc('increment_rule_stat', {
+        target_policy_id: violation.policy_id,
+        target_rule_id: violation.rule_id,
+        stat_column: 'false_positive_count'
+    });
+}
+```
+
+### 3. Database RPC
+
+The `increment_rule_stat` function atomically increments the counter:
+
+```sql
+CREATE OR REPLACE FUNCTION increment_rule_stat(
+    target_policy_id UUID,
+    target_rule_id TEXT,
+    stat_column TEXT
+)
+RETURNS VOID AS $$
+BEGIN
+    EXECUTE format(
+        'UPDATE rules SET %I = COALESCE(%I, 0) + 1 WHERE policy_id = $1 AND rule_id = $2',
+        stat_column, stat_column
+    )
+    USING target_policy_id, target_rule_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+This ensures **no race conditions** when multiple users review violations concurrently.
+
+### 4. Next Scan Uses Updated Precision
+
+The next time the rule runs:
+
+```typescript
+// From rule-executor.ts:96-99
+const tp = rule.approved_count || 0;  // Updated counter
+const fp = rule.false_positive_count || 0;  // Updated counter
+const historicalPrecision = (1 + tp) / (2 + tp + fp);
+```
+
+The confidence score now reflects the updated precision.
+
+## History Weight
+
+The system gradually **trusts history more** as reviews accumulate:
+
+```typescript
+const reviewCount = tp + fp;
+const historyWeight = Math.min(0.7, reviewCount / 20);
+score = (score * (1 - historyWeight)) + (historicalPrecision * historyWeight);
+```
+
+### Weight Curve
+
+| Reviews | History Weight | Rule Quality Weight |
+|---------|----------------|---------------------|
+| 0       | 0%             | 100%                |
+| 5       | 25%            | 75%                 |
+| 10      | 50%            | 50%                 |
+| 15      | 75% (capped)   | 25%                 |
+| 20+     | 70% (capped)   | 30%                 |
+
+After **20 reviews**, history dominates (70%), but rule quality still contributes (30%).
+
+### Why Cap at 70%?
+
+Rule quality captures **structural information**:
+- Does the rule have a threshold?
+- Does it combine multiple signals?
+- Is it well-documented?
+
+Even with 1,000 reviews, these factors still matter. The cap ensures rule quality never drops below 30% weight.
+
+## Example: Rule Lifecycle
+
+### Stage 1: New Rule (0 Reviews)
+
+```
+TP = 0, FP = 0
+Precision = (1 + 0) / (2 + 0 + 0) = 0.5
+History Weight = 0%
+
+Confidence = rule_quality_score
+           = 0.80 (well-formed rule)
+```
+
+The rule starts with **80% confidence** based solely on structural quality.
+
+### Stage 2: Early Feedback (5 Approvals, 1 Dismissal)
+
+```
+TP = 5, FP = 1
+Precision = (1 + 5) / (2 + 5 + 1) = 0.75
+History Weight = 6 / 20 = 30%
+
+Confidence = 0.80 * 0.70 + 0.75 * 0.30
+           = 0.56 + 0.225
+           = 0.785
+```
+
+Confidence **slightly decreases** due to the 1 false positive, but the rule is still trusted.
+
+### Stage 3: Established Rule (20 Approvals, 2 Dismissals)
+
+```
+TP = 20, FP = 2
+Precision = (1 + 20) / (2 + 20 + 2) = 0.875
+History Weight = 70% (capped)
+
+Confidence = 0.80 * 0.30 + 0.875 * 0.70
+           = 0.24 + 0.6125
+           = 0.85
+```
+
+Confidence **increases** to 85% as the rule proves accurate.
+
+### Stage 4: Noisy Rule (10 Approvals, 20 Dismissals)
+
+```
+TP = 10, FP = 20
+Precision = (1 + 10) / (2 + 10 + 20) = 0.34
+History Weight = 70%
+
+Confidence = 0.80 * 0.30 + 0.34 * 0.70
+           = 0.24 + 0.238
+           = 0.478
+```
+
+Confidence **drops** to 48% due to high false positive rate. The rule is **downranked** in future scans.
+
+## Impact on Ranking
+
+Violations are sorted by confidence:
+
+```typescript
+// From rule-executor.ts:189-192
+const rankedViolations = violations.sort((a, b) =>
+    (b.confidence || 0) - (a.confidence || 0)
+);
+```
+
+Low-precision rules produce violations that appear **lower in the list**. High-precision rules appear **at the top**.
+
+## Automatic Rule Tuning
+
+No manual intervention required:
+
+| Scenario | System Response |
+|----------|----------------|
+| **Rule is too noisy** | Confidence drops → violations ranked lower |
+| **Rule catches real issues** | Confidence rises → violations prioritized |
+| **Rule needs refinement** | Low precision signals need for review |
+| **Rule is perfect** | High precision → trust increases |
+
+## Multi-User Feedback
+
+If multiple users review the same rule:
+
+```
+User A approves 10 violations → TP = 10
+User B dismisses 2 violations → FP = 2
+
+Aggregated precision = (1 + 10) / (2 + 10 + 2) = 0.79
+```
+
+All users benefit from **collective intelligence**.
+
+## Feedback Loop Timeline
+
+```
+Scan 1: Rule fires with base confidence (0.80)
+  ↓
+User reviews 5 violations → 4 approve, 1 dismiss
+  ↓
+Rule precision updated: 0.75
+  ↓
+Scan 2: Rule fires with adjusted confidence (0.785)
+  ↓
+User reviews 10 more violations → 9 approve, 1 dismiss
+  ↓
+Rule precision updated: 0.81
+  ↓
+Scan 3: Rule fires with higher confidence (0.83)
+```
+
+The system **learns continuously** without retraining.
+
+## Database Schema
+
+The `rules` table stores feedback counters:
+
+```sql
+CREATE TABLE rules (
+    id UUID PRIMARY KEY,
+    policy_id UUID REFERENCES policies(id),
+    rule_id TEXT,
+    name TEXT,
+    -- ... other fields
+    approved_count INTEGER DEFAULT 0,
+    false_positive_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+Counters are **never decremented** — they only accumulate.
+
+## Compliance Score Impact
+
+Reviewing violations as false positives **improves the compliance score**:
+
+```typescript
+// From scoring.ts:22-37
+export function calculateComplianceScore(
+    totalRowsScanned: number,
+    violations: ViolationForScore[]
+): number {
+    if (totalRowsScanned === 0) return 100;
+
+    // Filter out false positives
+    const activeViolations = violations.filter(
+        (v) => v.status !== 'false_positive'
+    );
+
+    const weightedViolations = activeViolations.reduce((sum, v) => {
+        const weight = SEVERITY_WEIGHTS[v.severity] ?? 0;
+        return sum + weight;
+    }, 0);
+
+    const maxWeightedViolations = totalRowsScanned * 1.0;
+    const rawScore = 100 * (1 - weightedViolations / maxWeightedViolations);
+
+    return Math.round(Math.max(0, Math.min(100, rawScore)) * 100) / 100;
+}
+```
+
+Dismissing a **CRITICAL** violation (weight 1.0) has more impact than dismissing a **MEDIUM** violation (weight 0.5).
+
+## Score History
+
+The `scans` table tracks score changes:
+
+```json
+{
+  "score_history": [
+    { "score": 85.2, "timestamp": "2026-02-22T10:00:00Z", "action": "scan_completed", "violation_id": null },
+    { "score": 87.1, "timestamp": "2026-02-22T10:05:00Z", "action": "false_positive", "violation_id": "abc-123" }
+  ]
+}
+```
+
+This enables the **compliance trend chart** in the dashboard.
+
+## Why This Works
+
+### 1. No Model Retraining
+
+Bayesian updates are **instant**. No need to:
+- Export training data
+- Run expensive model training
+- Deploy updated models
+- A/B test new versions
+
+### 2. No Threshold Tuning
+
+Traditional systems require manual threshold adjustments:
+
+```
+Rule: amount > $10,000
+→ Too noisy? → Change to $20,000?
+→ Missed cases? → Change to $8,000?
+→ Repeat forever...
+```
+
+Yggdrasil adjusts **confidence**, not thresholds. The rule stays the same, but its ranking changes.
+
+### 3. Transparent
+
+Users can see:
+- Total reviews per rule
+- Precision score
+- How confidence is calculated
+
+No "black box" ML models.
+
+## Limitations
+
+### 1. Requires Human Feedback
+
+The system only improves if users review violations. Zero reviews → no learning.
+
+**Mitigation**: Prioritize high-confidence violations for review first.
+
+### 2. Assumes i.i.d. Data
+
+If your dataset changes dramatically (e.g., new transaction types), historical precision may not generalize.
+
+**Mitigation**: Track precision per scan and alert on sudden drops.
+
+### 3. No Cross-Rule Learning
+
+If Rule A and Rule B are similar, feedback on Rule A doesn't affect Rule B.
+
+**Future work**: Cluster rules by similarity and share feedback signals.
+
+## Monitoring Rule Health
+
+Use these metrics to identify problem rules:
+
+| Metric | Red Flag |
+|--------|----------|
+| **Precision < 0.4** | Rule is too noisy |
+| **0 reviews after 100 violations** | Rule needs attention |
+| **Precision dropping over time** | Dataset drift or rule decay |
+| **High violation count + low precision** | Disable rule, refine conditions |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Confidence Scoring" icon="chart-line" href="/engine/confidence-scoring">
+    See how Bayesian precision fits into the full confidence formula
+  </Card>
+  <Card title="Rule Types" icon="layer-group" href="/engine/rule-types">
+    Learn how different rule types are executed
+  </Card>
+</CardGroup>

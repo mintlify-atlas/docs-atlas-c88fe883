@@ -1,0 +1,212 @@
+---
+title: Installation
+description: Self-host Yggdrasil for on-premise compliance scanning
+---
+
+This guide covers setting up Yggdrasil for self-hosted deployment.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Node.js 18 or higher** installed ([download](https://nodejs.org))
+- A **Supabase project** ([create one](https://supabase.com))
+- A **Google AI Studio API key** for Gemini ([get one](https://aistudio.google.com))
+
+## Installation
+
+### 1. Clone or download the source code
+
+If you have access to the Yggdrasil repository:
+
+```bash
+git clone <repository-url>
+cd yggdrasil
+```
+
+### 2. Install dependencies
+
+Install all required packages using npm:
+
+```bash
+npm install
+```
+
+This will install:
+
+- **Next.js 15** with React 19 and TypeScript 5.7
+- **Supabase client** (`@supabase/supabase-js`, `@supabase/ssr`)
+- **Google Gemini SDK** (`@ai-sdk/google`, `ai`)
+- **PDF parsing** (`unpdf`)
+- **CSV parsing** (`papaparse`)
+- **UI components** (Tailwind CSS 4, shadcn/ui, Radix UI, Lucide icons)
+- **State management** (Zustand)
+- **Validation** (Zod 4)
+
+### 3. Set up environment variables
+
+Create a `.env.local` file in the project root:
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` with your credentials:
+
+```env
+# Supabase (from Settings → API)
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Gemini (from Google AI Studio)
+GEMINI_API_KEY=your_gemini_api_key
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_DEMO_MODE=false
+```
+
+<Tip>
+  Set `NEXT_PUBLIC_DEMO_MODE=true` to bypass authentication with a hardcoded demo session. This is useful for local testing.
+</Tip>
+
+See the [Configuration](/configuration) page for detailed explanations of each environment variable.
+
+### 4. Set up the database
+
+Yggdrasil uses Supabase PostgreSQL with Row-Level Security (RLS). You'll need to create the required tables and RLS policies.
+
+#### Database Schema
+
+The application requires the following tables:
+
+- **`policies`** — Policy metadata (one per audit)
+- **`rules`** — Extracted compliance rules with compound condition logic
+- **`scans`** — Scan execution records with compliance scores
+- **`violations`** — Detected compliance violations with evidence
+- **`pii_findings`** — PII detection results from uploaded datasets
+
+#### RPC Functions
+
+You'll also need to create the `increment_rule_stat` RPC function for Bayesian feedback:
+
+```sql
+CREATE OR REPLACE FUNCTION increment_rule_stat(
+  target_policy_id UUID,
+  target_rule_id TEXT,
+  stat_column TEXT
+) RETURNS VOID AS $$
+BEGIN
+  -- Implementation updates approved_count or false_positive_count atomically
+END;
+$$ LANGUAGE plpgsql;
+```
+
+<Note>
+  Full SQL migration scripts are included in the repository. Check the `supabase/migrations/` directory for table definitions and RLS policies.
+</Note>
+
+### 5. Run the development server
+
+Start the Next.js development server:
+
+```bash
+npm run dev
+```
+
+The application will be available at [http://localhost:3000](http://localhost:3000).
+
+### 6. Build for production
+
+To create an optimized production build:
+
+```bash
+npm run build
+```
+
+This will:
+- Compile TypeScript to JavaScript
+- Optimize React components
+- Bundle and minify CSS
+- Generate static pages where possible
+
+Start the production server:
+
+```bash
+npm start
+```
+
+The production server will run on port 3000 by default.
+
+## Deployment Options
+
+### Vercel (recommended)
+
+Yggdrasil is built on Next.js 15 and deploys seamlessly to Vercel:
+
+1. Push your code to GitHub, GitLab, or Bitbucket
+2. Import the project in [Vercel](https://vercel.com)
+3. Configure environment variables in the Vercel dashboard
+4. Deploy
+
+Vercel will automatically:
+- Run `npm run build` on each push
+- Serve the application from a global CDN
+- Support serverless API routes
+
+### Self-hosted (Docker, VPS, etc.)
+
+For self-hosted deployments:
+
+1. Build the production bundle: `npm run build`
+2. Start the server: `npm start`
+3. Configure a reverse proxy (nginx, Caddy) to handle HTTPS
+4. Set `NEXT_PUBLIC_APP_URL` to your production domain
+
+<Warning>
+  Ensure `NEXT_PUBLIC_DEMO_MODE=false` in production. Demo mode bypasses authentication and is **not secure** for multi-user deployments.
+</Warning>
+
+## Verification
+
+To verify your installation:
+
+1. Navigate to `http://localhost:3000`
+2. Sign up for an account (or use demo mode)
+3. Create a new audit and upload a test CSV
+4. Run a compliance scan
+
+If the scan completes successfully, your installation is working.
+
+## Troubleshooting
+
+### "Error: Invalid Supabase URL"
+
+Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are correctly set in `.env.local`. The URL should start with `https://` and end with `.supabase.co`.
+
+### "Error: Gemini API key not found"
+
+Ensure `GEMINI_API_KEY` is set in `.env.local`. This key is **server-side only** and should not have the `NEXT_PUBLIC_` prefix.
+
+### Build errors with TypeScript
+
+If you encounter TypeScript errors during `npm run build`, ensure you're using TypeScript 5.7 or higher:
+
+```bash
+npm install typescript@5.7
+```
+
+### Database connection issues
+
+Check that your Supabase project is active and the anon key has not expired. You can regenerate keys from the Supabase dashboard under **Settings → API**.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Learn about all environment variables and deployment settings
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first compliance scan
+  </Card>
+</CardGroup>

@@ -1,0 +1,178 @@
+---
+title: "Validate Scan Results"
+api: "POST /api/validate"
+description: "Validate scan results against ground-truth labels and compute precision, recall, and F1 metrics"
+---
+
+Computes accuracy metrics by comparing detected violations against ground-truth labels from a dataset. Returns precision, recall, F1 score, and per-rule breakdowns to evaluate detection performance.
+
+## Request Body
+
+<ParamField body="scan_id" type="string" required>
+  The unique identifier of the scan to validate
+</ParamField>
+
+<ParamField body="dataset" type="string" required>
+  The dataset name containing ground-truth labels. Supported values: `ibm_aml`, `paysim`
+</ParamField>
+
+<ParamField body="label_column" type="string" required>
+  The column name in the dataset containing ground-truth labels.
+  
+  For `ibm_aml`: use `IsLaundering`
+  
+  For `paysim`: use `isFraud`
+</ParamField>
+
+## Label Format
+
+Ground-truth labels should be boolean or binary values:
+- `true` / `1`: Indicates a positive case (e.g., fraudulent transaction, money laundering)
+- `false` / `0`: Indicates a negative case (e.g., legitimate transaction)
+
+## Response
+
+<ResponseField name="metrics" type="object">
+  Overall validation metrics
+  
+  <ResponseField name="precision" type="number">
+    Precision score (TP / (TP + FP))
+  </ResponseField>
+  
+  <ResponseField name="recall" type="number">
+    Recall score (TP / (TP + FN))
+  </ResponseField>
+  
+  <ResponseField name="f1" type="number">
+    F1 score (harmonic mean of precision and recall)
+  </ResponseField>
+  
+  <ResponseField name="true_positives" type="number">
+    Number of correctly detected violations
+  </ResponseField>
+  
+  <ResponseField name="false_positives" type="number">
+    Number of incorrectly detected violations
+  </ResponseField>
+  
+  <ResponseField name="false_negatives" type="number">
+    Number of missed violations
+  </ResponseField>
+  
+  <ResponseField name="true_negatives" type="number">
+    Number of correctly identified non-violations
+  </ResponseField>
+  
+  <ResponseField name="validated_against" type="string">
+    The ground-truth label column used for validation (e.g., `IBM_AML_IsLaundering`, `PaySim_isFraud`)
+  </ResponseField>
+  
+  <ResponseField name="total_labeled" type="number">
+    Total number of labeled records in the dataset
+  </ResponseField>
+  
+  <ResponseField name="summary" type="string">
+    Human-readable summary of validation results
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="per_rule" type="array">
+  Per-rule breakdown of validation metrics
+  
+  <ResponseField name="rule_id" type="string">
+    Rule identifier
+  </ResponseField>
+  
+  <ResponseField name="precision" type="number">
+    Precision for this specific rule
+  </ResponseField>
+  
+  <ResponseField name="recall" type="number">
+    Recall for this specific rule
+  </ResponseField>
+  
+  <ResponseField name="f1" type="number">
+    F1 score for this specific rule
+  </ResponseField>
+  
+  <ResponseField name="detected" type="number">
+    Number of violations detected by this rule
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  Human-readable summary of validation results
+</ResponseField>
+
+<ResponseField name="validated_against" type="string">
+  The ground-truth label column name
+</ResponseField>
+
+<ResponseField name="total_labeled" type="number">
+  Total number of labeled records
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code: `VALIDATION_ERROR`, `NOT_FOUND`, or `INTERNAL_ERROR`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Validation error details (only present for `VALIDATION_ERROR`)
+</ResponseField>
+
+<RequestExample>
+```bash
+curl -X POST "https://api.example.com/api/validate" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scan_id": "abc123",
+    "dataset": "ibm_aml",
+    "label_column": "IsLaundering"
+  }'
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "metrics": {
+    "precision": 0.87,
+    "recall": 0.92,
+    "f1": 0.89,
+    "true_positives": 115,
+    "false_positives": 17,
+    "false_negatives": 10,
+    "true_negatives": 858,
+    "validated_against": "IBM_AML_IsLaundering",
+    "total_labeled": 1000,
+    "summary": "Detected 115 true positives with 87% precision and 92% recall"
+  },
+  "per_rule": [
+    {
+      "rule_id": "AML_HIGH_RISK_COUNTRY",
+      "precision": 0.85,
+      "recall": 0.90,
+      "f1": 0.87,
+      "detected": 45
+    },
+    {
+      "rule_id": "AML_STRUCTURING",
+      "precision": 0.89,
+      "recall": 0.95,
+      "f1": 0.92,
+      "detected": 70
+    }
+  ],
+  "summary": "Detected 115 true positives with 87% precision and 92% recall",
+  "validated_against": "IBM_AML_IsLaundering",
+  "total_labeled": 1000
+}
+```
+</ResponseExample>

@@ -1,0 +1,359 @@
+---
+title: 'Operators'
+description: 'Supported operators, aliases, and type coercion rules'
+---
+
+## Overview
+
+Yggdrasil supports 12 core operators for building rule conditions. Each operator handles type coercion automatically for CSV string values.
+
+## Supported Operators
+
+| Operator | Aliases | Description | Example |
+|----------|---------|-------------|---------|
+| `>=` | `greater_than_or_equal`, `gte` | Greater than or equal | `amount >= 10000` |
+| `>` | `greater_than`, `gt` | Greater than | `amount > 5000` |
+| `<=` | `less_than_or_equal`, `lte` | Less than or equal | `amount <= 1000` |
+| `<` | `less_than`, `lt` | Less than | `amount < 10000` |
+| `==` | `equals`, `eq`, `equal` | Equality (with type coercion) | `status == "approved"` |
+| `!=` | `not_equals`, `neq`, `ne`, `not_equal` | Inequality | `type != "CASH_OUT"` |
+| `IN` | — | Set membership | `type IN ["DEBIT", "WIRE"]` |
+| `BETWEEN` | — | Range check `[min, max]` | `amount BETWEEN [8000, 10000]` |
+| `exists` | — | Field is present and non-empty | `email exists` |
+| `not_exists` | — | Field is missing or empty | `dpo_contact not_exists` |
+| `contains` | `includes` | Case-insensitive substring match | `description contains "crypto"` |
+| `MATCH` | `regex` | Regular expression test | `email MATCH "^[a-z]+@"` |
+
+## Operator Normalization
+
+The engine normalizes operator aliases from LLM extraction to standard forms:
+
+```typescript
+// From in-memory-backend.ts:223-244
+private normalizeOperator(op: string): string {
+    const normalized = op.trim().toLowerCase();
+    const map: Record<string, string> = {
+        // Standard
+        '>=': '>=', '>': '>', '<=': '<=', '<': '<',
+        '==': '==', '!=': '!=', 'in': 'IN', 'between': 'BETWEEN',
+        // Gemini aliases
+        'equals': '==', 'equal': '==', 'eq': '==',
+        'not_equals': '!=', 'not_equal': '!=', 'neq': '!=', 'ne': '!=',
+        'greater_than': '>', 'gt': '>',
+        'greater_than_or_equal': '>=', 'gte': '>=',
+        'less_than': '<', 'lt': '<',
+        'less_than_or_equal': '<=', 'lte': '<=',
+        'exists': 'EXISTS', 'not_exists': 'NOT_EXISTS',
+        'contains': 'CONTAINS', 'includes': 'CONTAINS',
+        'match': 'MATCH', 'regex': 'MATCH',
+    };
+    return map[normalized] || op;
+}
+```
+
+## Numeric Comparisons
+
+**Operators**: `>=`, `>`, `<=`, `<`
+
+Numeric comparisons use `parseFloat()` on both sides to handle CSV string values:
+
+```typescript
+// From in-memory-backend.ts:182-189
+case '>=':
+    return parseFloat(leftValue) >= parseFloat(rightValue);
+case '>':
+    return parseFloat(leftValue) > parseFloat(rightValue);
+case '<=':
+    return parseFloat(leftValue) <= parseFloat(rightValue);
+case '<':
+    return parseFloat(leftValue) < parseFloat(rightValue);
+```
+
+### Example
+
+```json
+{
+  "field": "amount",
+  "operator": ">=",
+  "value": 10000
+}
+```
+
+Matches records where `amount >= 10000`.
+
+## Equality Operators
+
+**Operators**: `==`, `!=`
+
+Equality uses type coercion to handle CSV string values:
+
+```typescript
+// From in-memory-backend.ts:59-84
+function coerceEquals(left: any, right: any): boolean {
+    // Same type — direct comparison
+    if (typeof left === typeof right) return left === right;
+
+    // Rule value is boolean, CSV value is string
+    if (typeof right === 'boolean' && typeof left === 'string') {
+        return (left.toLowerCase() === 'true') === right;
+    }
+
+    // Rule value is number, CSV value is string
+    if (typeof right === 'number' && typeof left === 'string') {
+        return parseFloat(left) === right;
+    }
+
+    // Rule value is string, CSV value is number/boolean
+    if (typeof left === 'boolean' && typeof right === 'string') {
+        return left === (right.toLowerCase() === 'true');
+    }
+    if (typeof left === 'number' && typeof right === 'string') {
+        return left === parseFloat(right);
+    }
+
+    // Fallback: loose equality
+    return left == right;
+}
+```
+
+### Type Coercion Examples
+
+| CSV Value | Rule Value | Match? |
+|-----------|------------|--------|
+| `"true"` | `true` | ✅ |
+| `"false"` | `false` | ✅ |
+| `"16"` | `16` | ✅ |
+| `"10000"` | `10000` | ✅ |
+| `"approved"` | `"approved"` | ✅ |
+
+## Set Membership
+
+**Operator**: `IN`
+
+Checks if a value exists in an array:
+
+```typescript
+// From in-memory-backend.ts:198-199
+case 'IN':
+    return Array.isArray(rightValue) && rightValue.includes(leftValue);
+```
+
+### Example
+
+```json
+{
+  "field": "transaction_type",
+  "operator": "IN",
+  "value": ["DEBIT", "WIRE", "TRANSFER"]
+}
+```
+
+Matches records where `transaction_type` is one of the listed values.
+
+## Range Check
+
+**Operator**: `BETWEEN`
+
+Checks if a value is within a range (inclusive):
+
+```typescript
+// From in-memory-backend.ts:200-205
+case 'BETWEEN':
+    return (
+        Array.isArray(rightValue) &&
+        (leftValue as number) >= rightValue[0] &&
+        (leftValue as number) <= rightValue[1]
+    );
+```
+
+### Example
+
+```json
+{
+  "field": "amount",
+  "operator": "BETWEEN",
+  "value": [8000, 10000]
+}
+```
+
+Matches records where `8000 <= amount <= 10000`.
+
+## Existence Operators
+
+**Operators**: `exists`, `not_exists`
+
+These operators test for field presence/absence **before** checking for null:
+
+```typescript
+// From in-memory-backend.ts:162-167
+if (op === 'EXISTS') {
+    return leftValue !== undefined && leftValue !== null && leftValue !== '';
+}
+if (op === 'NOT_EXISTS') {
+    return leftValue === undefined || leftValue === null || leftValue === '';
+}
+```
+
+### Example: Required Field
+
+```json
+{
+  "field": "dpo_contact",
+  "operator": "exists"
+}
+```
+
+Matches records where `dpo_contact` is present and non-empty.
+
+### Example: Missing Field
+
+```json
+{
+  "field": "consent_withdrawn",
+  "operator": "not_exists"
+}
+```
+
+Matches records where `consent_withdrawn` is missing or empty.
+
+## String Matching
+
+### Contains
+
+**Operator**: `contains` (alias: `includes`)
+
+Case-insensitive substring match:
+
+```typescript
+// From in-memory-backend.ts:208-210
+case 'CONTAINS':
+    return typeof leftValue === 'string' && typeof rightValue === 'string' &&
+        leftValue.toLowerCase().includes(rightValue.toLowerCase());
+```
+
+**Example**:
+
+```json
+{
+  "field": "description",
+  "operator": "contains",
+  "value": "crypto"
+}
+```
+
+Matches "Cryptocurrency transaction", "CRYPTO PURCHASE", "crypto-related".
+
+### Regex
+
+**Operator**: `MATCH` (alias: `regex`)
+
+Regular expression test:
+
+```typescript
+// From in-memory-backend.ts:211-215
+case 'MATCH':
+    if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+        return new RegExp(rightValue).test(leftValue);
+    }
+    return false;
+```
+
+**Example**: Email validation
+
+```json
+{
+  "field": "email",
+  "operator": "MATCH",
+  "value": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+}
+```
+
+## Cross-Field Comparison
+
+You can compare two fields using `value_type: "field"`:
+
+```typescript
+// From in-memory-backend.ts:174-178
+if (cond.value_type === 'field' && typeof rightValue === 'string') {
+    rightValue = record[rightValue];
+    if (rightValue === undefined || rightValue === null) return false;
+}
+```
+
+### Example: Balance Mismatch
+
+```json
+{
+  "AND": [
+    {
+      "field": "newbalanceOrig",
+      "operator": "!=",
+      "value": "expectedBalance",
+      "value_type": "field"
+    }
+  ]
+}
+```
+
+This compares `newbalanceOrig` to the `expectedBalance` field in the same record.
+
+## Sanity Checks
+
+The engine includes safety guards to prevent false positives:
+
+```typescript
+// From in-memory-backend.ts:169-172
+if (leftValue === undefined || leftValue === null) {
+    return false;
+}
+```
+
+If a field is missing or undefined, the condition **does not match** (except for `exists`/`not_exists`).
+
+## Compound Conditions
+
+Operators can be combined with `AND`/`OR` logic:
+
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 8000 },
+    { "field": "amount", "operator": "<", "value": 10000 },
+    { "field": "type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+  ]
+}
+```
+
+See [Architecture](/engine/architecture) for details on condition evaluation.
+
+## Type Coercion Summary
+
+| CSV Input | Expected Type | Coercion |
+|-----------|---------------|----------|
+| `"true"` | `boolean` | `true` |
+| `"false"` | `boolean` | `false` |
+| `"123"` | `number` | `123` |
+| `"10000.50"` | `number` | `10000.5` |
+| `"approved"` | `string` | `"approved"` |
+
+## Error Handling
+
+Unknown operators are logged and return `false`:
+
+```typescript
+// From in-memory-backend.ts:217-219
+default:
+    console.warn(`[ENGINE] Unknown operator: '${cond.operator}' in rule condition for field '${cond.field}'`);
+    return false;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Rule Types" icon="layer-group" href="/engine/rule-types">
+    Learn when to use WINDOWED vs SINGLE-TX
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/engine/architecture">
+    Understand the execution flow
+  </Card>
+</CardGroup>

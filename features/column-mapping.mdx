@@ -1,0 +1,164 @@
+---
+title: "Column Mapping"
+description: "Review and approve AI-suggested column mappings before running compliance scans"
+---
+
+Yggdrasil requires explicit approval of column mappings before running scans. This ensures transparent, auditable data transformations.
+
+## Why Explicit Approval?
+
+This is a core design decision:
+
+<Note>
+  **Transparent mapping principle:** No data transformations happen behind the scenes. You must explicitly confirm which CSV columns map to which compliance schema fields.
+</Note>
+
+Benefits:
+- **Auditability:** Every scan has a documented mapping configuration
+- **Error prevention:** Catch incorrect mappings before generating false violations
+- **Control:** Override AI suggestions when you know your data better
+
+## Standard Schema Fields
+
+Yggdrasil maps your CSV columns to these standard fields:
+
+| Field | Description | Example CSV Columns |
+|-------|-------------|---------------------|
+| `amount` | Monetary value | `Amount`, `Transaction_Amount`, `Payment_Value` |
+| `step` | Time reference | `Timestamp`, `Date`, `Step`, `Period` |
+| `account` | Primary entity | `Account_ID`, `Sender`, `User_ID`, `Employee_ID` |
+| `recipient` | Secondary entity | `Recipient`, `Destination`, `To_Account` |
+| `type` | Category/classification | `Transaction_Type`, `Event_Type`, `Category` |
+
+<Warning>
+  Not all fields are required. Only map fields that exist in your dataset and are relevant to your compliance rules.
+</Warning>
+
+## Mapping Review Process
+
+<Steps>
+  <Step title="Review AI suggestions">
+    After upload, Yggdrasil shows suggested mappings with confidence scores:
+    
+    ```json
+    {
+      "amount": "Transaction_Amount",  // 98% confidence
+      "account": "Sender_ID",          // 95% confidence
+      "type": "TX_Type"                // 87% confidence
+    }
+    ```
+    
+    High confidence (>90%) usually means the AI detected a known dataset format.
+  </Step>
+  
+  <Step title="Adjust mappings if needed">
+    Click any field to change its CSV column mapping:
+    - Select a different column from the dropdown
+    - Leave unmapped if not applicable
+    - The system shows a preview of sample values for verification
+  </Step>
+  
+  <Step title="Set temporal scale">
+    If your rules use time windows, specify how to interpret your time column:
+    - **1.0** = 1 step = 1 day (default for GENERIC datasets)
+    - **24.0** = 1 step = 1 hour (default for IBM AML / PaySim)
+    
+    Example: If your CSV has `step` values 1, 2, 3 and scale is 24.0, the engine treats step 1→2 as a 24-hour window.
+  </Step>
+  
+  <Step title="Confirm mapping">
+    Click "Confirm Mapping" to save your configuration. This generates a `mapping_id` and marks the audit ready to scan.
+  </Step>
+</Steps>
+
+## Mapping Storage
+
+Confirmed mappings are stored **in-memory** with the scan configuration:
+
+```json
+{
+  "mapping_id": "a1b2c3d4-...",
+  "upload_id": "e5f6g7h8-...",
+  "mapping_config": {
+    "amount": "Transaction_Amount",
+    "account": "Sender_ID",
+    "type": "TX_Type"
+  },
+  "temporal_scale": 24.0
+}
+```
+
+This mapping is applied during the scan and saved with the scan results for auditability.
+
+## What Happens During Confirmation
+
+When you click "Confirm Mapping":
+
+1. **Validation:** System checks that at least one field is mapped
+2. **Storage:** Mapping config is saved with a unique `mapping_id`
+3. **Readiness check:** Scan button becomes enabled
+4. **Response:** API returns `{ mapping_id, ready_to_scan: true }`
+
+<Note>
+  The mapping is stored in-memory, not persisted to the database. If you refresh the page, you'll need to re-upload and re-confirm.
+</Note>
+
+## Advanced: Cross-Field Comparisons
+
+Some compliance rules compare two fields (e.g., "sender balance != recipient balance"). For these rules, both fields must be mapped:
+
+```json
+{
+  "conditions": {
+    "field": "sender_balance",
+    "operator": "not_equals",
+    "value": "receiver_balance",
+    "value_type": "field"  // Indicates value is another column
+  }
+}
+```
+
+If your CSV doesn't have the required columns, you can:
+- Disable the rule (toggle it off in the Rules screen)
+- Add the missing columns to your CSV and re-upload
+
+## Common Mapping Scenarios
+
+### Scenario 1: GDPR Consent Audit
+You're auditing consent records. Your CSV has:
+- `data_subject_id` → map to `account`
+- `consent_date` → map to `step`
+- No monetary values → leave `amount` unmapped
+
+### Scenario 2: AML Transaction Monitoring
+You're scanning financial transactions. Your CSV has:
+- `transaction_amount` → map to `amount`
+- `timestamp` → map to `step`
+- `sender_account` → map to `account`
+- `receiver_account` → map to `recipient`
+- `transaction_type` → map to `type`
+
+### Scenario 3: SOC2 Access Logs
+You're auditing system access. Your CSV has:
+- `user_id` → map to `account`
+- `login_time` → map to `step`
+- `action` → map to `type`
+- No amounts or recipients → leave unmapped
+
+## Type Coercion
+
+CSV files produce string values. The engine automatically coerces types:
+
+- `"true"` / `"false"` → boolean
+- `"16"` / `"99.5"` → numeric
+- Date strings → parsed as timestamps (if used in temporal rules)
+
+You don't need to pre-format your CSV — Yggdrasil handles type conversion during scan execution.
+
+## Next Steps
+
+After confirming your mapping:
+
+1. Optionally run PII detection → [PII Detection](/features/pii-detection)
+2. Review rules and toggle any you want to disable
+3. Run the compliance scan → [Compliance Scanning](/features/compliance-scanning)

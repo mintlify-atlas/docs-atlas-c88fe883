@@ -1,0 +1,98 @@
+---
+title: Policy Frameworks Overview
+description: Choose from prebuilt AML, GDPR, and SOC2 frameworks or upload custom regulatory PDFs
+---
+
+Yggdrasil provides both **prebuilt policy frameworks** for common regulatory standards and support for **custom PDF upload** to extract rules from any compliance document.
+
+## Prebuilt Frameworks
+
+Yggdrasil ships with production-ready rule packs for three major regulatory frameworks:
+
+<CardGroup cols={3}>
+  <Card title="AML / FinCEN" icon="money-bill-trend-up" href="/frameworks/aml">
+    11 rules covering currency transaction reporting, structuring detection, and suspicious activity monitoring
+  </Card>
+  <Card title="GDPR" icon="shield-check" href="/frameworks/gdpr">
+    15 rules across consent, encryption, DPO requirements, and data subject rights
+  </Card>
+  <Card title="SOC2" icon="lock" href="/frameworks/soc2">
+    9 rules mapped to the five SOC2 trust principles (Security, Availability, Confidentiality, Processing Integrity, Privacy)
+  </Card>
+</CardGroup>
+
+### Why Use Prebuilt Frameworks?
+
+- **Instant deployment** — Rules are ready to use immediately with no extraction step
+- **Battle-tested logic** — Each rule includes real-world historical context and average fines
+- **Compound conditions** — Rules combine multiple signals (behavioral + temporal + relational) to minimize false positives
+- **Explainability** — Every rule includes policy excerpts, article references, and breach examples
+
+## Custom PDF Upload
+
+For proprietary or industry-specific regulations, upload any regulatory PDF and let Gemini 2.5 Flash extract structured, enforceable rules.
+
+<Card title="Custom PDF Extraction" icon="file-pdf" href="/frameworks/custom-pdf">
+  Upload any compliance document and extract rules with the Signal Specificity Framework
+</Card>
+
+### How It Works
+
+1. **Upload PDF** — Upload your regulatory document (AML, HIPAA, PCI-DSS, internal policy, etc.)
+2. **AI Extraction** — Gemini parses the document and identifies enforceable clauses
+3. **Rule Generation** — Each rule is converted to compound boolean logic with thresholds
+4. **Quality Filtering** — Only rules meeting minimum specificity threshold (2.0) are accepted
+
+### Key Differences
+
+| Feature | Prebuilt Frameworks | Custom PDF |
+|---|---|---|
+| **Setup Time** | Instant | 30-60 seconds (extraction) |
+| **Rule Quality** | Hand-curated | AI-extracted + validated |
+| **Customization** | Fixed rules (can be toggled) | Fully custom to your document |
+| **Historical Context** | Includes fines & breach examples | Policy text only |
+| **Use Case** | Standard compliance (AML, GDPR, SOC2) | Industry-specific or proprietary policies |
+
+## Choosing the Right Approach
+
+**Use prebuilt frameworks when:**
+- You need to comply with AML/FinCEN, GDPR, or SOC2
+- You want production-ready rules with minimal configuration
+- You need historical fine data and breach examples for risk assessment
+
+**Use custom PDF upload when:**
+- You have industry-specific regulations (HIPAA, PCI-DSS, GLBA, etc.)
+- You're enforcing internal company policies
+- You need rules extracted from proprietary compliance documents
+- You want full control over the regulatory text source
+
+## What Happens After Selection
+
+Regardless of which approach you choose:
+
+1. **Review Rules** — All extracted or prebuilt rules are shown for review
+2. **Toggle Activation** — Enable or disable individual rules before scanning
+3. **Map Your Data** — Connect your CSV columns to the schema fields required by rules
+4. **Run Scan** — Execute deterministic rule evaluation against your dataset
+5. **Review Violations** — Get explainable results with policy excerpts and evidence
+
+<Note>
+All rule execution is **deterministic** — no AI models are used in the enforcement loop. Explanations are generated from templates, not LLM calls.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Explore AML Rules" icon="building-columns" href="/frameworks/aml">
+    View the 11 AML/FinCEN rules for financial transaction monitoring
+  </Card>
+  <Card title="Explore GDPR Rules" icon="user-shield" href="/frameworks/gdpr">
+    View the 15 GDPR rules across consent, encryption, and data subject rights
+  </Card>
+  <Card title="Explore SOC2 Rules" icon="server" href="/frameworks/soc2">
+    View the 9 SOC2 rules mapped to trust service criteria
+  </Card>
+  <Card title="Upload Custom PDF" icon="upload" href="/frameworks/custom-pdf">
+    Learn how custom PDF extraction works with the Signal Specificity Framework
+  </Card>
+</CardGroup>

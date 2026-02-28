@@ -1,0 +1,201 @@
+---
+title: "PII Detection"
+description: "Scan uploaded datasets for personally identifiable information before running compliance checks"
+---
+
+Before running a compliance scan, optionally detect personally identifiable information (PII) in your uploaded dataset.
+
+## Why PII Detection?
+
+PII detection helps you:
+- Identify sensitive data columns before processing
+- Apply appropriate safeguards (hashing, encryption, removal)
+- Comply with data minimization principles (GDPR Article 5)
+- Avoid accidentally exposing PII in violation evidence
+
+<Note>
+  PII detection is **advisory only** — the scan proceeds regardless of findings, but you'll be warned about sensitive data.
+</Note>
+
+## Detected PII Types
+
+Yggdrasil scans for these PII categories using regex patterns:
+
+### Personal Identifiers
+- **Email addresses:** `user@example.com`
+- **Phone numbers:** US and international formats
+- **Social Security Numbers (SSN):** `123-45-6789`
+- **Names:** First/last name patterns
+- **Physical addresses:** Street addresses
+- **Dates of birth:** Various date formats
+
+### Financial Data
+- **Credit card numbers:** 16-digit card patterns (Visa, MC, Amex)
+- **Bank account numbers:** Common account formats
+
+### Government IDs
+- **Passport numbers:** International passport formats
+- **National ID numbers:** Country-specific formats
+- **Driver's license numbers:** US state formats
+
+### Technical Identifiers
+- **IP addresses:** IPv4 and IPv6
+- **MAC addresses:** Network hardware identifiers
+
+## Detection Process
+
+<Steps>
+  <Step title="Trigger PII scan">
+    After uploading your CSV, click "Scan for PII" before proceeding to mapping confirmation.
+  </Step>
+  
+  <Step title="Sampling">
+    The system analyzes up to 20 sample rows per column to detect PII patterns without scanning the entire dataset.
+  </Step>
+  
+  <Step title="Pattern matching">
+    Each column is tested against PII regex patterns. Matches are masked for safe display:
+    - Emails: `u***@example.com`
+    - SSNs: `***-**-1234`
+    - Credit cards: `****-****-****-1234`
+    - Phones: `***-***-1234`
+  </Step>
+  
+  <Step title="Results surfaced">
+    You'll see:
+    - Column name with PII detected
+    - PII type (email, phone, ssn, etc.)
+    - Severity (CRITICAL, HIGH, MEDIUM)
+    - Confidence score (60-100%)
+    - Match percentage (how many rows contain PII)
+    - Masked sample values
+  </Step>
+</Steps>
+
+## Severity Levels
+
+| Severity | PII Types | Risk |
+|----------|-----------|------|
+| **CRITICAL** | SSN, credit card, passport, national ID | Immediate regulatory concern (GDPR Art. 9) |
+| **HIGH** | Email, phone, address, date of birth, bank account | Regulated personal data (GDPR Art. 4) |
+| **MEDIUM** | Name, IP address, MAC address | Identifiers requiring protection |
+
+## Confidence Scoring
+
+Confidence indicates detection accuracy:
+
+- **90-100%:** Strong pattern match (e.g., email regex)
+- **70-89%:** Likely PII (e.g., name patterns)
+- **60-69%:** Possible PII (e.g., generic number patterns)
+- **< 60%:** Not reported (too uncertain)
+
+<Warning>
+  Only findings with confidence ≥ 60% are surfaced. Lower confidence detections are ignored to avoid false alarms.
+</Warning>
+
+## Detection Output
+
+Example PII finding:
+
+```json
+{
+  "column_name": "customer_email",
+  "pii_type": "email",
+  "severity": "HIGH",
+  "confidence": 98,
+  "match_count": 487,
+  "total_rows": 500,
+  "match_percentage": 97.4,
+  "masked_samples": [
+    "j***@example.com",
+    "s***@company.org",
+    "a***@domain.net"
+  ],
+  "detection_regex": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+  "violation_text": "Column contains email addresses, which are personal data under GDPR Article 4(1).",
+  "suggestion": "hash"
+}
+```
+
+## Remediation Suggestions
+
+For each PII type, Yggdrasil suggests:
+
+- **hash:** One-way hash for pseudonymization (emails, account numbers)
+- **encrypt:** Two-way encryption for reversible protection (credit cards, SSNs)
+- **remove:** Delete the column if not needed for compliance checks
+
+<Note>
+  Yggdrasil does not automatically modify your data. Suggestions are advisory — you must apply them manually before uploading.
+</Note>
+
+## False Positives
+
+Regex-based detection may produce false positives:
+
+- IP addresses detected in non-IP columns (e.g., version numbers like `1.2.3.4`)
+- Phone numbers detected in numeric IDs
+- Credit card patterns in transaction IDs
+
+Use confidence scores and match percentages to filter noise:
+- **High match % + high confidence:** Likely true positive
+- **Low match % + medium confidence:** Possibly false positive
+
+## What Happens with PII Findings?
+
+PII findings are:
+1. Stored in the `pii_findings` table with `upload_id`
+2. Linked to the scan via `scan_id` after scan completion
+3. Surfaced as warnings in the UI
+4. **Not enforced:** The scan proceeds even if PII is detected
+
+<Warning>
+  PII detection is a courtesy feature. If you're handling regulated personal data, consult your legal/compliance team before uploading.
+</Warning>
+
+## Detection Patterns
+
+Yggdrasil uses these fallback regex patterns:
+
+### Email
+```regex
+[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+```
+
+### Phone (US/International)
+```regex
+(\+?\d{1,3}[-\.\s]?)?\(?\d{3}\)?[-\.\s]?\d{3}[-\.\s]?\d{4}
+```
+
+### SSN
+```regex
+\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b
+```
+
+### Credit Card
+```regex
+\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b
+```
+
+### IP Address (IPv4)
+```regex
+\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b
+```
+
+Custom patterns may be used if AI detection improves regex specificity.
+
+## Disabling PII Detection
+
+If you don't need PII scanning:
+- Skip the "Scan for PII" step
+- Proceed directly to column mapping confirmation
+- No PII findings will be stored
+
+## Next Steps
+
+After reviewing PII findings:
+
+1. Apply remediation (hash/encrypt/remove columns) if needed
+2. Re-upload the sanitized dataset
+3. Confirm column mappings → [Column Mapping](/features/column-mapping)
+4. Run the compliance scan → [Compliance Scanning](/features/compliance-scanning)

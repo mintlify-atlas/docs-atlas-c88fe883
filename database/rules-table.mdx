@@ -1,0 +1,144 @@
+---
+title: Rules Table
+description: Schema for compliance rules with compound condition logic and Bayesian feedback
+---
+
+## Overview
+
+The `rules` table stores extracted compliance rules with compound condition logic and Bayesian feedback counters for precision improvement over time.
+
+## Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID, PK | Unique rule identifier |
+| `policy_id` | UUID, FK | Parent policy |
+| `rule_id` | text | Unique ID within policy (e.g., `'aml_rule_1'`) |
+| `name` | text | Human-readable name |
+| `type` | text | Execution type (see below) |
+| `severity` | text | `'CRITICAL'`, `'HIGH'`, `'MEDIUM'` |
+| `threshold` | numeric | Rule threshold value |
+| `time_window` | integer | Time window in hours (windowed rules only) |
+| `conditions` | jsonb | Compound boolean logic tree (see below) |
+| `policy_excerpt` | text | Quote from regulatory document |
+| `policy_section` | text | Section reference (e.g., "Article 5(1)(a)") |
+| `description` | text | JSON string with rule text + optional `historical_context` |
+| `is_active` | boolean | Whether rule fires during scans |
+| `approved_count` | integer | User-confirmed true positives (Bayesian feedback) |
+| `false_positive_count` | integer | User-dismissed false positives (Bayesian feedback) |
+| `created_at` | timestamptz | Timestamp when rule was created |
+
+## Rule Types
+
+The `type` field determines how the rule is executed:
+
+| Type | Description |
+|---|---|
+| `single_transaction` | Evaluated per record (no aggregation) |
+| `aggregation` | Aggregates values across multiple records |
+| `velocity` | Detects rate-of-change patterns |
+| `structuring` | Detects transaction structuring patterns |
+| `dormant_reactivation` | Detects dormant account reactivation |
+| `round_amount` | Detects suspicious round-number transactions |
+
+## Conditions JSONB Structure
+
+Rules support arbitrarily nested **AND/OR logic trees**. Each condition can be a logical operator (`AND`, `OR`) or a leaf condition.
+
+### Example: Compound AND Condition
+
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 10000 },
+    { "field": "transaction_type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+  ]
+}
+```
+
+### Example: Nested AND/OR Logic
+
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 5000 },
+    {
+      "OR": [
+        { "field": "country", "operator": "==", "value": "US" },
+        { "field": "country", "operator": "==", "value": "CA" }
+      ]
+    }
+  ]
+}
+```
+
+### Leaf Condition Format
+
+```json
+{
+  "field": "column_name",
+  "operator": ">=",
+  "value": 10000,
+  "value_type": "literal"  // or "field" for cross-field comparisons
+}
+```
+
+## Bayesian Feedback Loop
+
+<Info>
+The `approved_count` and `false_positive_count` columns enable Bayesian precision calculation:
+
+**Precision = (1 + TP) / (2 + TP + FP)**
+
+Where:
+- TP = `approved_count` (true positives)
+- FP = `false_positive_count` (false positives)
+</Info>
+
+When a user reviews a violation:
+- **Approve** → Increments `approved_count`
+- **Dismiss as False Positive** → Increments `false_positive_count`
+
+Rules that consistently produce false positives lose confidence over time.
+
+## Updating Bayesian Counters
+
+Use the `increment_rule_stat` RPC function to atomically increment counters:
+
+```sql
+-- Increment approved_count for a rule
+SELECT increment_rule_stat(
+  'policy-uuid',
+  'aml_rule_1',
+  'approved_count'
+);
+
+-- Increment false_positive_count for a rule
+SELECT increment_rule_stat(
+  'policy-uuid',
+  'aml_rule_2',
+  'false_positive_count'
+);
+```
+
+## Supported Operators
+
+| Operator | Aliases | Description |
+|---|---|---|
+| `>=` | `greater_than_or_equal`, `gte` | Greater than or equal |
+| `>` | `greater_than`, `gt` | Greater than |
+| `<=` | `less_than_or_equal`, `lte` | Less than or equal |
+| `<` | `less_than`, `lt` | Less than |
+| `==` | `equals`, `eq` | Equality (with type coercion) |
+| `!=` | `not_equals`, `neq` | Inequality |
+| `IN` | — | Set membership |
+| `BETWEEN` | — | Range check `[min, max]` |
+| `exists` | — | Field is present and non-empty |
+| `not_exists` | — | Field is missing or empty |
+| `contains` | `includes` | Case-insensitive substring match |
+| `MATCH` | `regex` | Regular expression test |
+
+## Relationships
+
+- **Foreign Key to `policies`** — Each rule belongs to a policy
+- **Referenced by `violations`** — Violations reference `rule_id`

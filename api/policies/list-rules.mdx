@@ -1,0 +1,227 @@
+---
+title: "List Policy Rules"
+api: "GET /api/policies/{id}"
+description: "Retrieve a policy with all its rules and dirty state indicator"
+---
+
+## Overview
+
+This endpoint retrieves a policy by ID along with all associated rules. It also returns a `dirty` flag indicating whether the policy has been modified since the last completed scan.
+
+## Authentication
+
+Requires a valid session token. Returns `401 UNAUTHORIZED` if not authenticated.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the policy to retrieve
+</ParamField>
+
+## Request
+
+### Example Request
+
+```bash
+curl -X GET https://yourdomain.com/api/policies/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Cookie: session=your_session_token"
+```
+
+## Response
+
+<ResponseField name="id" type="string">
+  UUID of the policy
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Policy name
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Policy type: `pdf` or `prebuilt`
+</ResponseField>
+
+<ResponseField name="prebuilt_type" type="string | null">
+  Prebuilt pack type if applicable: `aml`, `gdpr`, or `soc2`
+</ResponseField>
+
+<ResponseField name="rules_count" type="number">
+  Total number of rules in the policy
+</ResponseField>
+
+<ResponseField name="rules" type="array">
+  Array of all rules in the policy
+  
+  <ResponseField name="rule_id" type="string">
+    Unique rule identifier in UPPER_SNAKE_CASE
+  </ResponseField>
+  
+  <ResponseField name="name" type="string">
+    Human-readable rule name
+  </ResponseField>
+  
+  <ResponseField name="type" type="string">
+    Rule category (e.g., `structuring`, `retention`, `encryption`)
+  </ResponseField>
+  
+  <ResponseField name="severity" type="enum">
+    Rule severity: `CRITICAL`, `HIGH`, or `MEDIUM`
+  </ResponseField>
+  
+  <ResponseField name="threshold" type="number | null">
+    Numeric threshold for threshold-based rules
+  </ResponseField>
+  
+  <ResponseField name="time_window" type="number | null">
+    Time window in hours for temporal rules
+  </ResponseField>
+  
+  <ResponseField name="conditions" type="object">
+    Rule evaluation logic with recursive AND/OR conditions
+  </ResponseField>
+  
+  <ResponseField name="policy_excerpt" type="string">
+    Reference to the compliance regulation or policy text
+  </ResponseField>
+  
+  <ResponseField name="policy_section" type="string | null">
+    Section reference from the policy document
+  </ResponseField>
+  
+  <ResponseField name="is_active" type="boolean">
+    Whether the rule is currently active and will be evaluated in scans
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of policy creation
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of last policy update
+</ResponseField>
+
+<ResponseField name="dirty" type="boolean">
+  Whether the policy has been modified since the last completed scan.
+  
+  - `true`: Policy has been updated (rules added/removed/modified) since last scan
+  - `false`: Policy unchanged since last scan, or no scans exist yet
+</ResponseField>
+
+### Success Response
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "AML Compliance Policy",
+  "type": "prebuilt",
+  "prebuilt_type": "aml",
+  "rules_count": 2,
+  "rules": [
+    {
+      "rule_id": "STRUCTURING_PATTERN",
+      "name": "Transaction Structuring Detection",
+      "type": "structuring",
+      "severity": "CRITICAL",
+      "threshold": 10000,
+      "time_window": 24,
+      "conditions": {
+        "AND": [
+          {
+            "field": "amount",
+            "operator": "greater_than",
+            "value": 9000
+          },
+          {
+            "field": "amount",
+            "operator": "less_than",
+            "value": 10000
+          }
+        ]
+      },
+      "policy_excerpt": "31 CFR § 1010.314 - Structured transactions to evade BSA reporting",
+      "policy_section": "31 CFR § 1010.314",
+      "is_active": true
+    },
+    {
+      "rule_id": "RAPID_MOVEMENT",
+      "name": "Rapid Fund Movement",
+      "type": "velocity",
+      "severity": "HIGH",
+      "threshold": null,
+      "time_window": 48,
+      "conditions": {
+        "AND": [
+          {
+            "field": "deposit_timestamp",
+            "operator": "exists",
+            "value": true
+          },
+          {
+            "field": "withdrawal_timestamp",
+            "operator": "exists",
+            "value": true
+          }
+        ]
+      },
+      "policy_excerpt": "FinCEN Advisory FIN-2012-A001 - Rapid movement patterns",
+      "policy_section": "FinCEN Advisory FIN-2012-A001",
+      "is_active": false
+    }
+  ],
+  "created_at": "2026-02-28T10:00:00Z",
+  "updated_at": "2026-02-28T10:30:00Z",
+  "dirty": true
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code identifier
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+### 404 Not Found
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Policy not found"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "An unexpected error occurred"
+}
+```
+
+## Dirty State Detection
+
+The `dirty` flag helps track whether a policy needs to be rescanned:
+
+1. Compares `policy.updated_at` against the latest completed scan's `completed_at` timestamp
+2. Returns `true` if the policy was modified after the last scan
+3. Returns `false` if unchanged or if no scans exist yet
+
+This is useful for triggering rescans when rules have been modified.
+
+## Use Cases
+
+- Displaying policy details in the UI
+- Showing all rules with their current active/inactive state
+- Detecting if a policy needs to be rescanned after modifications
+- Exporting policy configuration for review
+
+## Notes
+
+- Rules are ordered by `created_at` in ascending order (oldest first)
+- The `threshold` field is parsed as a float for numeric compatibility
+- Empty rule arrays return `[]` if no rules exist for the policy

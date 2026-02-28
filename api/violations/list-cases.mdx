@@ -1,0 +1,204 @@
+---
+title: "List Violation Cases"
+api: "GET /api/violations/cases"
+description: "Get violations grouped by account or entity with aggregated metrics"
+---
+
+Retrieve violations organized by account/entity with summary statistics. Useful for identifying high-risk accounts with multiple violations.
+
+## Query Parameters
+
+<ParamField query="scan_id" type="string" required>
+  Scan ID to retrieve cases for
+</ParamField>
+
+<ParamField query="severity" type="string">
+  Filter cases to only include violations of this severity. Valid values: `CRITICAL`, `HIGH`, `MEDIUM`
+</ParamField>
+
+## Response
+
+<ResponseField name="cases" type="array">
+  Array of violation cases grouped by account
+  
+  <ResponseField name="account_id" type="string">
+    Account or entity identifier
+  </ResponseField>
+  
+  <ResponseField name="violation_count" type="integer">
+    Total number of violations for this account
+  </ResponseField>
+  
+  <ResponseField name="max_severity" type="string">
+    Highest severity level among all violations for this account
+  </ResponseField>
+  
+  <ResponseField name="top_rule" type="string">
+    Rule ID of the most severe violation
+  </ResponseField>
+  
+  <ResponseField name="total_amount" type="number">
+    Sum of all transaction amounts associated with violations
+  </ResponseField>
+  
+  <ResponseField name="violations" type="array">
+    List of violations for this account
+    
+    <ResponseField name="id" type="string">
+      Violation identifier
+    </ResponseField>
+    
+    <ResponseField name="rule_id" type="string">
+      Rule identifier
+    </ResponseField>
+    
+    <ResponseField name="severity" type="string">
+      Violation severity
+    </ResponseField>
+    
+    <ResponseField name="amount" type="number">
+      Transaction amount
+    </ResponseField>
+    
+    <ResponseField name="explanation" type="string">
+      Violation explanation
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Review status: `pending`, `approved`, or `false_positive`
+    </ResponseField>
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="total_cases" type="integer">
+  Number of accounts with **active** violations (excludes accounts with only false positives)
+</ResponseField>
+
+<ResponseField name="total_violations" type="integer">
+  Total number of **active** violations (excludes false positives)
+</ResponseField>
+
+<ResponseField name="compliance_score" type="number">
+  Compliance score for the scan (0-100)
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://api.example.com/api/violations/cases?scan_id=abc123" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch('/api/violations/cases?scan_id=abc123', {
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  }
+});
+const cases = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.example.com/api/violations/cases',
+    params={'scan_id': 'abc123'},
+    headers={'Authorization': 'Bearer YOUR_TOKEN'}
+)
+cases = response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "cases": [
+    {
+      "account_id": "ACC-2024-001",
+      "violation_count": 3,
+      "max_severity": "CRITICAL",
+      "top_rule": "SAR_THRESHOLD",
+      "total_amount": 45000,
+      "violations": [
+        {
+          "id": "viol_789xyz",
+          "rule_id": "SAR_THRESHOLD",
+          "severity": "CRITICAL",
+          "amount": 15000,
+          "explanation": "Transaction exceeds SAR filing threshold",
+          "status": "pending"
+        },
+        {
+          "id": "viol_790abc",
+          "rule_id": "VELOCITY_CHECK",
+          "severity": "HIGH",
+          "amount": 20000,
+          "explanation": "Unusual transaction velocity detected",
+          "status": "pending"
+        },
+        {
+          "id": "viol_791def",
+          "rule_id": "ROUND_AMOUNT",
+          "severity": "MEDIUM",
+          "amount": 10000,
+          "explanation": "Suspicious round amount pattern",
+          "status": "approved"
+        }
+      ]
+    },
+    {
+      "account_id": "ACC-2024-002",
+      "violation_count": 1,
+      "max_severity": "HIGH",
+      "top_rule": "CTR_MISSING",
+      "total_amount": 12000,
+      "violations": [
+        {
+          "id": "viol_792ghi",
+          "rule_id": "CTR_MISSING",
+          "severity": "HIGH",
+          "amount": 12000,
+          "explanation": "Currency transaction report not filed",
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+  "total_cases": 2,
+  "total_violations": 4,
+  "compliance_score": 72.5
+}
+```
+</ResponseExample>
+
+## Use Cases
+
+### Identify high-risk accounts
+Accounts with multiple CRITICAL violations or high `total_amount` may require investigation.
+
+### Filter by severity
+```bash
+GET /api/violations/cases?scan_id=abc123&severity=CRITICAL
+```
+
+Returns only cases containing CRITICAL violations.
+
+### Build compliance dashboards
+Use `total_cases` and `compliance_score` to display scan-level metrics.
+
+## Severity Ranking
+
+The `max_severity` is determined using this hierarchy:
+1. **CRITICAL** (highest priority)
+2. **HIGH**
+3. **MEDIUM** (lowest priority)
+
+The `top_rule` corresponds to the most severe violation for that account.
+
+## False Positive Handling
+
+- **`cases` array** includes all accounts (even those with only false positives)
+- **`total_cases`** excludes accounts with only false positives
+- **`total_violations`** excludes false positive violations
+
+This allows you to see the full picture while focusing metrics on active compliance issues.

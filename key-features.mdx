@@ -1,0 +1,514 @@
+---
+title: Key features
+description: Explore Yggdrasil's deterministic enforcement, explainability, and compliance capabilities
+---
+
+## Core capabilities
+
+Yggdrasil provides a comprehensive compliance engine with features designed for audit readiness and transparency.
+
+<CardGroup cols={2}>
+  <Card title="Deterministic enforcement" icon="gears">
+    Pure logic rule engine with no ML in the critical path. Results are reproducible and audit-ready.
+  </Card>
+  <Card title="Full explainability" icon="magnifying-glass">
+    Every violation includes policy excerpts, evidence grids, and deterministic explanations.
+  </Card>
+  <Card title="Signal Specificity Framework" icon="filter">
+    AI-extracted rules must combine multiple signals to minimize false positives.
+  </Card>
+  <Card title="Bayesian feedback" icon="chart-line">
+    Rules improve over time as you review violations, updating precision models.
+  </Card>
+  <Card title="Transparent mapping" icon="table-columns">
+    AI suggests column mappings but requires explicit user approval before scanning.
+  </Card>
+  <Card title="PII detection" icon="shield-halved">
+    Automatic detection of personally identifiable information in uploaded datasets.
+  </Card>
+</CardGroup>
+
+## Deterministic enforcement
+
+The rule engine is pure logic with no machine learning models in the critical path.
+
+### Design principles
+
+- **No AI in enforcement** - Rules are evaluated as compound boolean expressions (AND/OR trees)
+- **Reproducible results** - Same data and rules always produce identical outcomes
+- **Audit readiness** - Every violation can be traced to specific boolean conditions
+- **Fast execution** - No API calls during rule evaluation
+
+### Rule execution types
+
+Yggdrasil supports two execution modes:
+
+<Tabs>
+  <Tab title="Single transaction">
+    Evaluates conditions against each record individually:
+    
+    - **Use case**: Threshold checks, pattern matching, compliance flags
+    - **Examples**: Transactions over $10K, missing required fields, invalid transaction types
+    - **Performance**: Fast - O(n) where n = record count
+    
+    ```json
+    {
+      "type": "single_transaction",
+      "conditions": {
+        "AND": [
+          { "field": "amount", "operator": ">=", "value": 10000 },
+          { "field": "type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+        ]
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Windowed">
+    Groups transactions by account and evaluates within time windows:
+    
+    - **Use case**: Velocity limits, structuring detection, aggregation rules
+    - **Examples**: Multiple transactions totaling >$10K in 24 hours, dormant account reactivation
+    - **Performance**: O(n log n) due to grouping and sorting
+    
+    Windowed rule types:
+    - `aggregation` - Sum/count/avg over time window
+    - `velocity` - Transaction frequency limits
+    - `structuring` - Multiple sub-threshold transactions
+    - `dormant_reactivation` - Activity after long inactivity
+    - `round_amount` - Pattern detection for round numbers
+    
+    ```json
+    {
+      "type": "velocity",
+      "time_window": 24,
+      "threshold": 5,
+      "aggregation_function": "count"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Supported operators
+
+Yggdrasil supports a rich set of comparison operators:
+
+| Operator | Aliases | Description | Example |
+|----------|---------|-------------|----------|
+| `>=` | `greater_than_or_equal`, `gte` | Greater than or equal | `amount >= 10000` |
+| `>` | `greater_than`, `gt` | Greater than | `balance > 0` |
+| `<=` | `less_than_or_equal`, `lte` | Less than or equal | `amount <= 1000` |
+| `<` | `less_than`, `lt` | Less than | `age < 18` |
+| `==` | `equals`, `eq` | Equality (with type coercion) | `status == "active"` |
+| `!=` | `not_equals`, `neq` | Inequality | `type != "PAYMENT"` |
+| `IN` | — | Set membership | `type IN ["DEBIT", "WIRE"]` |
+| `BETWEEN` | — | Range check `[min, max]` | `amount BETWEEN [1000, 5000]` |
+| `exists` | — | Field is present and non-empty | `recipient exists` |
+| `not_exists` | — | Field is missing or empty | `approval_code not_exists` |
+| `contains` | `includes` | Case-insensitive substring match | `description contains "transfer"` |
+| `MATCH` | `regex` | Regular expression test | `account MATCH "^[0-9]{10}$"` |
+
+<Note>
+  Cross-field comparisons are supported via `value_type: "field"`, where the `value` references another column name instead of a literal.
+</Note>
+
+### Type coercion
+
+CSV files produce string values. The engine coerces automatically:
+
+- `"true"` / `"false"` ↔ `true` / `false`
+- `"16"` ↔ `16`
+- Numeric comparisons use `parseFloat()` on both sides
+
+## Full explainability
+
+Every violation includes a complete audit trail with deterministic explanations.
+
+### Violation components
+
+Each violation record contains:
+
+- **Policy excerpt** - Exact text from regulatory document
+- **Policy section** - Chapter/article reference (e.g., "Article 32")
+- **Evidence** - All field values that triggered the rule
+- **Threshold comparison** - Expected vs. actual values
+- **Explanation** - Natural language description generated from templates
+- **Confidence score** - 0-1 score based on multiple factors
+- **Review status** - Pending, approved, or false positive
+
+### Deterministic explanations
+
+Unlike AI-generated text, explanations are built from templates:
+
+```typescript
+// Template example
+`Transaction of ${amount} ${currency} on account ${account} 
+exceeds the ${threshold} threshold specified in ${policy_section}. 
+Transaction type: ${type}. Additional context: ${evidence}.`
+```
+
+**Benefits:**
+- **No hallucinations** - Template logic is deterministic
+- **Consistency** - Same violation type = same explanation format
+- **Performance** - Instant generation without API calls
+- **Auditability** - Template code is in version control
+
+<Tip>
+  Explanations can be customized by modifying the templates in `src/lib/engine/explainability.ts`.
+</Tip>
+
+## Signal Specificity Framework
+
+The Signal Specificity Framework prevents false positives by requiring rules to combine multiple signal types.
+
+### Signal categories and weights
+
+| Signal Type | Weight | Examples |
+|-------------|--------|----------|
+| Behavioral | 1.0 | Transaction type, account type, activity patterns |
+| Temporal | 0.8 | Time windows, velocity limits, dormancy periods |
+| Relational | 0.7 | Cross-account patterns, recipient relationships |
+| Threshold | 0.5 | Amount limits, count thresholds, balance checks |
+
+### Minimum specificity threshold
+
+Rules must achieve a combined specificity of **2.0** to be activated.
+
+**Example 1: Valid rule (specificity = 2.5)**
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 10000 },        // Threshold: 0.5
+    { "field": "type", "operator": "IN", "value": ["WIRE"] },      // Behavioral: 1.0
+    { "field": "time_window", "operator": "<=", "value": 24 }      // Temporal: 0.8
+  ]
+}
+// Total: 0.5 + 1.0 + 0.8 = 2.3 ✓
+```
+
+**Example 2: Invalid rule (specificity = 0.5)**
+```json
+{ "field": "amount", "operator": ">=", "value": 10000 }            // Threshold: 0.5
+// Total: 0.5 ✗ (below 2.0 threshold)
+```
+
+<Warning>
+  Single-threshold rules are automatically rejected during PDF extraction to prevent false positive spam.
+</Warning>
+
+### Implementation
+
+The framework is enforced during:
+
+1. **PDF rule extraction** - Gemini is instructed to combine signals
+2. **Rule validation** - `rule-quality-validator.ts` scores each rule
+3. **Scan execution** - Low-specificity rules receive confidence penalties
+
+## Bayesian feedback loop
+
+Yggdrasil learns from your reviews to improve future scans.
+
+### Precision model
+
+Each rule maintains counters for true positives and false positives:
+
+```typescript
+interface Rule {
+  approved_count: number;        // User-confirmed violations
+  false_positive_count: number;  // User-dismissed violations
+}
+```
+
+### Precision formula
+
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+Where:
+- `TP` = `approved_count`
+- `FP` = `false_positive_count`
+- Priors (1, 2) provide conservative initial estimates
+
+### How feedback works
+
+<Steps>
+  <Step title="Review violation">
+    User sees violation in dashboard and clicks "Approve" or "Dismiss as False Positive".
+  </Step>
+  
+  <Step title="Update counters">
+    Database increments `approved_count` or `false_positive_count` atomically via RPC:
+    
+    ```sql
+    increment_rule_stat(policy_id, rule_id, 'approved_count')
+    ```
+  </Step>
+  
+  <Step title="Recalculate precision">
+    Next scan loads updated counters and applies precision to confidence score:
+    
+    ```typescript
+    const precision = (1 + rule.approved_count) / 
+                      (2 + rule.approved_count + rule.false_positive_count);
+    confidence *= precision;
+    ```
+  </Step>
+  
+  <Step title="Update compliance score">
+    Dismissing false positives immediately improves compliance score:
+    
+    ```typescript
+    new_score = old_score + (severity_weight * precision_boost)
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  Precision updates are stored per-rule in the database, so feedback improves all future audits using the same policy framework.
+</Info>
+
+## Transparent mapping
+
+Column mappings are AI-suggested but human-approved.
+
+### Mapping workflow
+
+1. **Upload CSV** - POST `/api/data/upload`
+2. **Schema detection** - Analyze headers and sample data
+3. **AI suggestion** - Gemini maps columns to compliance schema
+4. **User review** - View suggested mappings in UI
+5. **Explicit approval** - POST `/api/data/mapping/confirm`
+6. **Scan proceeds** - Engine uses approved mappings only
+
+### Example mapping
+
+```json
+{
+  "mapping_config": {
+    "nameOrig": "account",
+    "nameDest": "recipient",
+    "amount": "amount",
+    "step": "step",
+    "type": "type",
+    "oldbalanceOrg": "oldbalanceOrg",
+    "newbalanceOrig": "newbalanceOrig"
+  }
+}
+```
+
+<Note>
+  The mapping is stored with the scan record and used for all violation explanations and evidence grids.
+</Note>
+
+## PII detection
+
+Automatic detection of personally identifiable information in uploaded datasets.
+
+### Detected PII types
+
+- **Email addresses** - Regex pattern matching
+- **Phone numbers** - US and international formats
+- **Social Security Numbers** - SSN patterns
+- **Names** - Common first/last name dictionaries
+- **Physical addresses** - Street addresses
+- **Credit card numbers** - Luhn algorithm validation
+- **IP addresses** - IPv4 and IPv6
+- **Passport numbers** - Country-specific formats
+- **National IDs** - Various government ID formats
+- **Bank account numbers** - IBAN and domestic formats
+
+### Detection process
+
+<Steps>
+  <Step title="Sample data">
+    PII detector analyzes first 20 rows of uploaded CSV.
+  </Step>
+  
+  <Step title="Pattern matching">
+    Regex patterns test each column for PII signatures.
+  </Step>
+  
+  <Step title="Confidence scoring">
+    Match rate determines confidence (0-1):
+    
+    ```typescript
+    confidence = match_count / total_rows
+    ```
+  </Step>
+  
+  <Step title="Create findings">
+    PII findings are stored with:
+    - Column name and PII type
+    - Severity (CRITICAL, HIGH, MEDIUM)
+    - Masked sample values
+    - Remediation suggestion (hash, encrypt, remove)
+  </Step>
+</Steps>
+
+### PII findings example
+
+```json
+{
+  "column_name": "email",
+  "pii_type": "email",
+  "severity": "HIGH",
+  "confidence": 0.95,
+  "match_count": 19,
+  "total_rows": 20,
+  "sample_values": ["j***@example.com", "s***@test.org"],
+  "suggestion": "hash"
+}
+```
+
+<Warning>
+  PII detection runs automatically but does not block scanning. Findings are surfaced as warnings in the audit flow.
+</Warning>
+
+## Confidence scoring
+
+Each violation receives a confidence score (0-1) computed from multiple factors.
+
+### Score components
+
+```typescript
+score = rule_quality              // Structural quality of the rule
+      + signal_specificity_boost  // Bonus for compound AND conditions  
+      + statistical_anomaly       // How unusual the value vs. dataset
+      + bayesian_precision        // (1 + TP) / (2 + TP + FP) from reviews
+      + criticality_weight        // CRITICAL > HIGH > MEDIUM
+```
+
+### Component details
+
+<AccordionGroup>
+  <Accordion title="Rule quality (0-0.3)">
+    Structural quality based on:
+    - Condition complexity (compound vs. simple)
+    - Operator diversity (multiple comparison types)
+    - Signal coverage (behavioral + temporal + relational)
+    
+    Calculated by `rule-quality-validator.ts`.
+  </Accordion>
+  
+  <Accordion title="Signal specificity (0-0.2)">
+    Bonus for compound conditions:
+    - Single condition: +0.0
+    - AND with 2 conditions: +0.1
+    - AND with 3+ conditions: +0.2
+    - OR conditions: +0.05
+    
+    Rewards rules that combine multiple signals.
+  </Accordion>
+  
+  <Accordion title="Statistical anomaly (0-0.2)">
+    How unusual is the value compared to the dataset:
+    - Calculate percentile rank of `actual_value`
+    - Values in top/bottom 5% get +0.2
+    - Values in top/bottom 10% get +0.1
+    - Median values get +0.0
+    
+    Highlights true outliers vs. common patterns.
+  </Accordion>
+  
+  <Accordion title="Bayesian precision (0-1.0)">
+    Historical accuracy from user reviews:
+    
+    ```
+    precision = (1 + approved_count) / 
+                (2 + approved_count + false_positive_count)
+    ```
+    
+    - New rule: 0.5 (neutral prior)
+    - 10 approvals, 0 FP: 0.85
+    - 5 approvals, 5 FP: 0.5
+    - 0 approvals, 10 FP: 0.08
+  </Accordion>
+  
+  <Accordion title="Criticality weight (0-0.3)">
+    Severity-based boost:
+    - CRITICAL: +0.3
+    - HIGH: +0.2
+    - MEDIUM: +0.1
+    
+    Ensures high-severity violations surface first.
+  </Accordion>
+</AccordionGroup>
+
+### Score interpretation
+
+- **0.9-1.0**: High confidence violation, likely true positive
+- **0.7-0.9**: Medium-high confidence, review recommended
+- **0.5-0.7**: Medium confidence, may need investigation
+- **&lt;0.5**: Low confidence, likely false positive
+
+<Tip>
+  The dashboard sorts violations by confidence score descending, so you review the most likely violations first.
+</Tip>
+
+## Prebuilt policy frameworks
+
+Yggdrasil includes production-ready compliance frameworks.
+
+### AML / FinCEN (11 rules)
+
+- **Currency Transaction Reports** - Transactions >= $10,000
+- **Structuring detection** - Multiple sub-threshold transactions
+- **Velocity limits** - Transaction frequency thresholds
+- **Dormant account reactivation** - Activity after long inactivity
+- **Round amount patterns** - Detection of round numbers (e.g., $10,000.00)
+- **Balance mismatches** - Balance calculation verification
+- **Suspicious activity thresholds** - SAR filing requirements
+
+### GDPR (14+ categories)
+
+- **Consent management** - Processing without valid consent
+- **Data Protection Officer** - DPO requirement violations
+- **Encryption at rest** - Unencrypted personal data
+- **Marketing consent** - Invalid marketing communications
+- **Personal data handling** - Excessive data collection
+- **Privacy impact assessments** - Missing DPIA for high-risk processing
+- **Processing records** - Incomplete Article 30 records
+- **Right of access** - Delayed or denied data subject requests
+- **Right of erasure** - Unlawful retention of data
+- **Third-country transfers** - Inadequate safeguards for transfers
+
+### SOC2 (5 trust principles)
+
+- **Security** - Logical access controls, authentication requirements
+- **Availability** - System uptime and disaster recovery
+- **Confidentiality** - Encryption and data protection
+- **Processing Integrity** - Data accuracy and completeness
+- **Privacy** - Notice, choice, and data retention
+
+### Custom PDF extraction
+
+Upload any regulatory document:
+
+1. PDF is parsed via `unpdf` (serverless-compatible)
+2. Gemini 2.5 Flash extracts enforceable clauses
+3. Rules are validated against Signal Specificity Framework
+4. User reviews and activates extracted rules
+
+<Note>
+  Custom PDF extraction requires each rule to achieve a minimum combined specificity of 2.0 before activation.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="API authentication"
+    icon="key"
+    href="/api/authentication"
+  >
+    Set up authentication and make your first API request
+  </Card>
+  <Card
+    title="Upload policy"
+    icon="file-pdf"
+    href="/api/policies/ingest-pdf"
+  >
+    Learn how to upload and extract rules from regulatory PDFs
+  </Card>
+</CardGroup>

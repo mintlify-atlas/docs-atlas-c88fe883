@@ -1,0 +1,129 @@
+---
+title: Violations Table
+description: Schema for detected compliance violations with evidence and review status
+---
+
+## Overview
+
+The `violations` table stores detected compliance violations with evidence, deterministic explanations, and review status for Bayesian feedback.
+
+## Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID, PK | Unique violation identifier |
+| `scan_id` | UUID, FK | Parent scan |
+| `rule_id` | text | Violated rule ID (e.g., `'aml_rule_1'`) |
+| `rule_name` | text | Rule name |
+| `severity` | text | `'CRITICAL'`, `'HIGH'`, `'MEDIUM'` |
+| `record_id` | text | Row ID from source data |
+| `account` | text | Account/entity identifier |
+| `amount` | numeric | Transaction amount |
+| `transaction_type` | text | Transaction type |
+| `evidence` | jsonb | Matched field values from the record |
+| `threshold` | numeric | Rule threshold breached |
+| `actual_value` | numeric | Actual value that triggered violation |
+| `policy_excerpt` | text | Policy clause violated |
+| `policy_section` | text | Policy section reference (e.g., "Article 5(1)(a)") |
+| `explanation` | text | Deterministic explanation (template-generated) |
+| `status` | text | `'pending'`, `'approved'`, `'false_positive'` |
+| `review_note` | text | Reviewer comments |
+| `reviewed_by` | UUID | Reviewer user ID |
+| `reviewed_at` | timestamptz | Timestamp when reviewed |
+| `created_at` | timestamptz | Timestamp when violation was detected |
+
+## Evidence JSONB
+
+The `evidence` field stores the matched field values from the source data record that triggered the violation.
+
+### Example Evidence
+
+```json
+{
+  "amount": 15000,
+  "transaction_type": "WIRE",
+  "country": "US",
+  "timestamp": "2026-02-22T10:00:00Z",
+  "account": "ACC-12345"
+}
+```
+
+This evidence shows:
+- The transaction amount was $15,000
+- The transaction type was "WIRE"
+- The country was "US"
+- The timestamp was February 22, 2026 at 10:00 AM
+- The account was "ACC-12345"
+
+<Info>
+The evidence grid is displayed in the UI alongside the policy excerpt and explanation, providing full audit-ready documentation for each violation.
+</Info>
+
+## Review Status Values
+
+The `status` field tracks the review state of each violation:
+
+| Status | Description | Impact on Compliance Score |
+|---|---|---|
+| `pending` | Awaiting review | Counts as active violation |
+| `approved` | Confirmed true positive | Counts as active violation |
+| `false_positive` | Dismissed as incorrect | Removed from violation count, score increases |
+
+## Bayesian Feedback Flow
+
+When a user reviews a violation:
+
+1. **Approve** → Sets `status = 'approved'`, increments `rules.approved_count`
+2. **Dismiss** → Sets `status = 'false_positive'`, increments `rules.false_positive_count`
+3. **Score Update** → Recalculates compliance score and appends to `scans.score_history`
+
+This feedback loop improves rule precision over time using the formula:
+
+**Precision = (1 + TP) / (2 + TP + FP)**
+
+## Deterministic Explanations
+
+<Warning>
+**No AI in the Enforcement Loop**
+
+Explanations are generated from **string templates**, not LLM calls. This makes violations reproducible and audit-ready. AI is only used for rule extraction from PDFs, never for violation detection or explanation.
+</Warning>
+
+### Example Explanation
+
+```
+Transaction of $15,000 exceeds the threshold of $10,000 for WIRE transactions. 
+This violates the Currency Transaction Report requirement under 31 CFR 1020.310.
+```
+
+## Relationships
+
+- **Foreign Key to `scans`** — Each violation belongs to a scan
+- **References `rules.rule_id`** — Each violation is triggered by a specific rule
+- **Foreign Key to `auth.users` (via `reviewed_by`)** — Tracks who reviewed the violation
+
+## Example Queries
+
+### Get All Critical Violations for a Scan
+
+```sql
+SELECT * FROM violations
+WHERE scan_id = 'scan-uuid'
+  AND severity = 'CRITICAL'
+  AND status = 'pending'
+ORDER BY created_at DESC;
+```
+
+### Get Violations Grouped by Account
+
+```sql
+SELECT 
+  account,
+  COUNT(*) as violation_count,
+  SUM(CASE WHEN severity = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count
+FROM violations
+WHERE scan_id = 'scan-uuid'
+  AND status != 'false_positive'
+GROUP BY account
+ORDER BY critical_count DESC, violation_count DESC;
+```

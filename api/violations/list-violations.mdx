@@ -1,0 +1,219 @@
+---
+title: "List Violations"
+api: "GET /api/violations"
+description: "Retrieve a paginated list of compliance violations with optional filtering"
+---
+
+List all violations detected during compliance scans. Supports filtering by scan, severity, status, and rule.
+
+## Query Parameters
+
+<ParamField query="scan_id" type="string">
+  Filter violations by scan ID
+</ParamField>
+
+<ParamField query="severity" type="string">
+  Filter by severity level. Valid values: `CRITICAL`, `HIGH`, `MEDIUM`
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by review status. Valid values: `pending`, `approved`, `false_positive`
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Number of violations per page
+</ParamField>
+
+## Response
+
+<ResponseField name="violations" type="array">
+  Array of violation objects
+  
+  <ResponseField name="id" type="string">
+    Unique violation identifier
+  </ResponseField>
+  
+  <ResponseField name="scan_id" type="string">
+    ID of the scan that detected this violation
+  </ResponseField>
+  
+  <ResponseField name="rule_id" type="string">
+    Identifier of the violated rule (e.g., `CTR_MISSING`, `SAR_THRESHOLD`)
+  </ResponseField>
+  
+  <ResponseField name="rule_name" type="string">
+    Human-readable rule name
+  </ResponseField>
+  
+  <ResponseField name="severity" type="string">
+    Severity level: `CRITICAL`, `HIGH`, or `MEDIUM`
+  </ResponseField>
+  
+  <ResponseField name="account" type="string">
+    Account or entity associated with the violation
+  </ResponseField>
+  
+  <ResponseField name="amount" type="number">
+    Transaction amount that triggered the violation
+  </ResponseField>
+  
+  <ResponseField name="transaction_type" type="string">
+    Type of transaction (e.g., `WIRE`, `ACH`, `CASH`)
+  </ResponseField>
+  
+  <ResponseField name="evidence" type="object">
+    Evidence data supporting the violation (transaction details, metrics, etc.)
+  </ResponseField>
+  
+  <ResponseField name="threshold" type="number">
+    Policy threshold that was exceeded
+  </ResponseField>
+  
+  <ResponseField name="actual_value" type="number">
+    Actual value that exceeded the threshold
+  </ResponseField>
+  
+  <ResponseField name="policy_excerpt" type="string">
+    Relevant excerpt from the policy document
+  </ResponseField>
+  
+  <ResponseField name="policy_section" type="string">
+    Section reference in the policy (e.g., Article 33, Section 12.4)
+  </ResponseField>
+  
+  <ResponseField name="explanation" type="string">
+    Detailed explanation of why this is a violation
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Review status: `pending`, `approved`, or `false_positive`
+  </ResponseField>
+  
+  <ResponseField name="review_note" type="string" nullable>
+    Notes added during review
+  </ResponseField>
+  
+  <ResponseField name="reviewed_at" type="string" nullable>
+    ISO 8601 timestamp when the violation was reviewed
+  </ResponseField>
+  
+  <ResponseField name="created_at" type="string">
+    ISO 8601 timestamp when the violation was created
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination metadata
+  
+  <ResponseField name="page" type="integer">
+    Current page number
+  </ResponseField>
+  
+  <ResponseField name="limit" type="integer">
+    Items per page
+  </ResponseField>
+  
+  <ResponseField name="total" type="integer">
+    Total number of violations matching the filters
+  </ResponseField>
+  
+  <ResponseField name="pages" type="integer">
+    Total number of pages
+  </ResponseField>
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://api.example.com/api/violations?scan_id=abc123&severity=CRITICAL&page=1&limit=20" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch(
+  '/api/violations?scan_id=abc123&severity=CRITICAL&page=1&limit=20',
+  {
+    headers: {
+      'Authorization': 'Bearer YOUR_TOKEN'
+    }
+  }
+);
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.example.com/api/violations',
+    params={
+        'scan_id': 'abc123',
+        'severity': 'CRITICAL',
+        'page': 1,
+        'limit': 20
+    },
+    headers={'Authorization': 'Bearer YOUR_TOKEN'}
+)
+data = response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "violations": [
+    {
+      "id": "viol_789xyz",
+      "scan_id": "abc123",
+      "rule_id": "SAR_THRESHOLD",
+      "rule_name": "Suspicious Activity Report Filing Required",
+      "severity": "CRITICAL",
+      "account": "ACC-2024-001",
+      "amount": 15000,
+      "transaction_type": "WIRE",
+      "evidence": {
+        "transaction_id": "TXN-456",
+        "transaction_date": "2024-01-15",
+        "counterparty": "High Risk Entity",
+        "risk_score": 85
+      },
+      "threshold": 10000,
+      "actual_value": 15000,
+      "policy_excerpt": "Financial institutions must file a SAR within 30 days of detecting suspicious activity involving $5,000 or more.",
+      "policy_section": "31 CFR 1020.320",
+      "explanation": "Transaction exceeds SAR filing threshold and involves a high-risk counterparty without proper documentation.",
+      "status": "pending",
+      "review_note": null,
+      "reviewed_at": null,
+      "created_at": "2024-02-28T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 47,
+    "pages": 3
+  }
+}
+```
+</ResponseExample>
+
+## Common Use Cases
+
+### Get all violations for a specific scan
+```bash
+GET /api/violations?scan_id=abc123
+```
+
+### Filter by severity and status
+```bash
+GET /api/violations?scan_id=abc123&severity=CRITICAL&status=pending
+```
+
+### Paginate through results
+```bash
+GET /api/violations?scan_id=abc123&page=2&limit=50
+```

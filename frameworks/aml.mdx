@@ -1,0 +1,435 @@
+---
+title: AML / FinCEN Compliance Pack
+description: 11 prebuilt rules for anti-money laundering and financial crime detection
+---
+
+The **AML Compliance Pack** provides 11 production-ready rules based on FinCEN regulations, covering currency transaction reporting (CTR), structuring detection, suspicious activity reporting (SAR), and fraud monitoring.
+
+Each rule includes historical fines, breach examples, and regulatory references to provide context for risk assessment.
+
+## Rule Categories
+
+Rules are organized into five categories:
+
+<AccordionGroup>
+  <Accordion title="Currency Transaction Reporting" icon="file-invoice-dollar">
+    Reporting requirements for large cash transactions.
+    
+    - **CTR Threshold** — Transactions exceeding $10,000
+    - **CTR Aggregation** — Multiple transactions aggregating to $10,000+ in one day
+  </Accordion>
+  
+  <Accordion title="Structuring and Velocity" icon="chart-line">
+    Detection of patterns intended to evade reporting thresholds.
+    
+    - **Structuring Pattern Detection** — 3+ transactions between $8K-$10K in 24 hours
+    - **Sub-Threshold Velocity** — 5+ transactions between $8K-$10K in 24 hours
+    - **SAR Velocity** — Total transaction volume exceeding $25K in 24 hours
+  </Accordion>
+  
+  <Accordion title="Suspicious Activity Reporting" icon="flag">
+    Detection and reporting of potentially illegal activity.
+    
+    - **SAR Threshold** — Transactions ≥ $5K with high-risk types
+    - **High Value Transfer** — Wire/transfer transactions > $50,000
+  </Accordion>
+  
+  <Accordion title="Account Behavior Monitoring" icon="user-magnifying-glass">
+    Monitoring for unusual account activity and dormant accounts.
+    
+    - **Dormant Account Reactivation** — High-value transactions from dormant accounts
+    - **Balance Mismatch** — Transaction amounts not matching balance changes
+    - **Round Amount Pattern** — 3+ round-dollar transactions in 30 days
+  </Accordion>
+  
+  <Accordion title="Fraud Detection" icon="triangle-exclamation">
+    Identifying potential fraudulent transactions and patterns.
+    
+    - **Fraud Indicator** — Cash-out/transfers to previously empty accounts
+  </Accordion>
+</AccordionGroup>
+
+## Detailed Rule Reference
+
+### Currency Transaction Reporting
+
+<AccordionGroup>
+  <Accordion title="CTR_THRESHOLD - Currency Transaction Report Threshold" icon="1">
+    **Severity:** CRITICAL  
+    **Threshold:** $10,000  
+    **Type:** Single Transaction
+    
+    **What it detects:**
+    
+    Flags any single transaction via CASH_OUT, TRANSFER, or WIRE exceeding $10,000.
+    
+    **Conditions:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "type", "operator": "IN", "value": ["CASH_OUT", "TRANSFER", "WIRE"] },
+        { "field": "amount", "operator": ">=", "value": 10000 }
+      ]
+    }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Transactions exceeding $10,000 via CASH_OUT, TRANSFER, or WIRE must be reported to FinCEN.
+    
+    **Regulatory Reference:** 31 CFR 1010.311 (Section 1 - Currency Transaction Reporting)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $1.4B (HSBC 2012 fine - failure to monitor transactions)
+    - **Breach Example:** HSBC allowed $881M in money laundering by drug cartels
+  </Accordion>
+  
+  <Accordion title="CTR_AGGREGATION - CTR Aggregation" icon="2">
+    **Severity:** CRITICAL  
+    **Threshold:** $10,000  
+    **Type:** Aggregation (24-hour window)
+    
+    **What it detects:**
+    
+    Flags when multiple transactions by the same person aggregate to more than $10,000 in a single business day.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": "aggregate_sum", "value": 10000 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Multiple transactions by or on behalf of the same person during any one business day shall be aggregated for CTR purposes.
+    
+    **Regulatory Reference:** 31 CFR 1010.313 (Section 1 - CTR Aggregation)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $700M (FinCEN fine - systemic aggregation failure)
+    - **Breach Example:** Bank failed to aggregate multiple $9K cash deposits made same day
+  </Accordion>
+</AccordionGroup>
+
+### Structuring and Velocity
+
+<AccordionGroup>
+  <Accordion title="STRUCTURING_PATTERN - Structuring Pattern Detection" icon="3">
+    **Severity:** CRITICAL  
+    **Threshold:** 3 transactions  
+    **Type:** Structuring (24-hour window)
+    
+    **What it detects:**
+    
+    Detects structuring/smurfing — 3 or more transactions between $8,000 and $10,000 within 24 hours.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": "BETWEEN", "value": [8000, 10000] }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > No person shall structure, or assist in structuring, any transaction for the purpose of evading the CTR reporting requirement.
+    
+    **Regulatory Reference:** 31 USC 5324 (Section 2 - Structuring Detection)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $200k+ (Individual fines for structuring)
+    - **Breach Example:** Customer made three $9,500 deposits over 3 days to avoid CTR
+  </Accordion>
+  
+  <Accordion title="SUB_THRESHOLD_VELOCITY - Sub-Threshold Velocity" icon="4">
+    **Severity:** HIGH  
+    **Threshold:** 5 transactions  
+    **Type:** Velocity (24-hour window)
+    
+    **What it detects:**
+    
+    Flags any customer account with 5 or more transactions in a rolling 24-hour period where individual amounts are between $8,000 and $10,000.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": "BETWEEN", "value": [8000, 10000] }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any customer account with 5 or more transactions in a rolling 24-hour period where individual transaction amounts are between $8,000 and $10,000.
+    
+    **Regulatory Reference:** 31 USC 5318(g) (Section 2 - Sub-Threshold Velocity)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $2M (Institutional fine for pattern detection failure)
+    - **Breach Example:** Gambling site ignored frequent $9K transfers between users
+  </Accordion>
+  
+  <Accordion title="SAR_VELOCITY - SAR Velocity" icon="5">
+    **Severity:** HIGH  
+    **Threshold:** $25,000  
+    **Type:** Aggregation (24-hour window)
+    
+    **What it detects:**
+    
+    Flags any individual account with transaction volume exceeding $25,000 within any 24-hour period.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": "aggregate_sum", "value": 25000 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any individual account with transaction volume exceeding $25,000 within any 24-hour period.
+    
+    **Regulatory Reference:** 31 CFR 1020.320 (Section 3 - SAR Velocity)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $613M (U.S. Bancorp 2018 - capped transaction monitoring)
+    - **Breach Example:** Bank set monitoring thresholds too high, missing high-velocity smurfing
+  </Accordion>
+</AccordionGroup>
+
+### Suspicious Activity Reporting
+
+<AccordionGroup>
+  <Accordion title="SAR_THRESHOLD - Suspicious Activity Report Threshold" icon="6">
+    **Severity:** HIGH  
+    **Threshold:** $5,000  
+    **Type:** Single Transaction
+    
+    **What it detects:**
+    
+    Flags transactions ≥ $5,000 with high-risk types (TRANSFER, WIRE, CASH_OUT) for SAR review.
+    
+    **Conditions:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "type", "operator": "IN", "value": ["TRANSFER", "WIRE", "CASH_OUT"] },
+        { "field": "amount", "operator": ">=", "value": 5000 }
+      ]
+    }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > The Institution shall file a SAR for any transaction totaling $5,000 or more where it suspects illegal activity.
+    
+    **Regulatory Reference:** 31 CFR 1020.320 (Section 3 - Suspicious Activity Reporting)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $450M (Capital One 2021 fine - SAR program failures)
+    - **Breach Example:** Bank failed to file SARs on millions of dollars in suspicious activity
+  </Accordion>
+  
+  <Accordion title="HIGH_VALUE_TRANSFER - High Value Transfer" icon="7">
+    **Severity:** HIGH  
+    **Threshold:** $50,000  
+    **Type:** Single Transaction
+    
+    **What it detects:**
+    
+    Flags any WIRE or TRANSFER transaction exceeding $50,000.
+    
+    **Conditions:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "type", "operator": "IN", "value": ["TRANSFER", "WIRE"] },
+        { "field": "amount", "operator": ">", "value": 50000 }
+      ]
+    }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any WIRE or TRANSFER transaction exceeding $50,000.
+    
+    **Regulatory Reference:** Travel Rule (Section 5 - High Value Transfer Monitoring)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $100M+ (Penalty for failing to verify origin of funds)
+    - **Breach Example:** High-value wire transfers to shell companies in offshore jurisdictions
+  </Accordion>
+</AccordionGroup>
+
+### Account Behavior Monitoring
+
+<AccordionGroup>
+  <Accordion title="DORMANT_ACCOUNT_REACTIVATION - Dormant Account Reactivation" icon="8">
+    **Severity:** MEDIUM  
+    **Threshold:** $5,000  
+    **Type:** Dormant Reactivation (90-day window)
+    
+    **What it detects:**
+    
+    Flags any account inactive for 90+ days when that account conducts a transaction exceeding $5,000 within the first 30 days of reactivation.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": ">", "value": 5000 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any account inactive for 90+ days when that account conducts a transaction exceeding $5,000 within the first 30 days of reactivation.
+    
+    **Regulatory Reference:** FFIEC Guidance (Section 4 - Account Behavior Monitoring)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $15M (Average fine for identity theft/money laundering via dormant accounts)
+    - **Breach Example:** Identity thieves hijacked dormant accounts to funnel fraudulent funds
+  </Accordion>
+  
+  <Accordion title="BALANCE_MISMATCH - Balance Mismatch" icon="9">
+    **Severity:** MEDIUM  
+    **Type:** Single Transaction
+    
+    **What it detects:**
+    
+    Flags any transaction where the balance change does not match the transaction amount.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "balance", "operator": "mismatch", "value": 0.01 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any transaction where the balance change does not match the transaction amount.
+    
+    **Regulatory Reference:** GAAP / FinCEN Controls (Section 4 - Balance Verification)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $5M (Fine for poor internal controls)
+    - **Breach Example:** Technical error allowed double-spending, used as exploit by fraudsters
+  </Accordion>
+  
+  <Accordion title="ROUND_AMOUNT_PATTERN - Round Amount Pattern" icon="10">
+    **Severity:** MEDIUM  
+    **Threshold:** 3 transactions  
+    **Type:** Round Amount (720-hour / 30-day window)
+    
+    **What it detects:**
+    
+    Flags any series of 3 or more round-dollar transactions (amounts divisible by $1,000) within 30 days.
+    
+    **Conditions:**
+    
+    ```json
+    { "field": "amount", "operator": "round_check", "value": 1000 }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Flag any series of 3 or more round-dollar transactions within 30 days.
+    
+    **Regulatory Reference:** FATF Guidance (Section 4 - Transaction Pattern Monitoring)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $1M (Indicator of sophisticated money laundering)
+    - **Breach Example:** Iterative $10,000, $20,000, and $5,000 transfers used to mask origin
+  </Accordion>
+</AccordionGroup>
+
+### Fraud Detection
+
+<AccordionGroup>
+  <Accordion title="FRAUD_INDICATOR - Fraud Indicator" icon="11">
+    **Severity:** HIGH  
+    **Type:** Single Transaction
+    
+    **What it detects:**
+    
+    Flags cash-out or transfer transactions to accounts with zero prior balance that result in a credit.
+    
+    **Conditions:**
+    
+    ```json
+    {
+      "AND": [
+        { "field": "type", "operator": "IN", "value": ["CASH_OUT", "TRANSFER"] },
+        { "field": "oldbalanceDest", "operator": "==", "value": 0 },
+        { "field": "newbalanceDest", "operator": ">", "value": 0 }
+      ]
+    }
+    ```
+    
+    **Policy Excerpt:**
+    
+    > Transactions to accounts with zero prior balance that result in a credit may indicate fraudulent activity.
+    
+    **Regulatory Reference:** FFIEC IT Handbook (Section 5 - Fraud Detection)
+    
+    **Historical Context:**
+    
+    - **Average Fine:** $3.4B (Combined annual impact of transaction fraud)
+    - **Breach Example:** Attacker emptied multiple newly-created accounts via rapid transfers
+  </Accordion>
+</AccordionGroup>
+
+## Rule Summary Table
+
+| Rule ID | Name | Severity | Threshold | Time Window | Category |
+|---------|------|----------|-----------|-------------|----------|
+| CTR_THRESHOLD | Currency Transaction Report Threshold | CRITICAL | $10,000 | — | CTR Reporting |
+| CTR_AGGREGATION | CTR Aggregation | CRITICAL | $10,000 | 24 hours | CTR Reporting |
+| STRUCTURING_PATTERN | Structuring Pattern Detection | CRITICAL | 3 txns | 24 hours | Structuring |
+| SUB_THRESHOLD_VELOCITY | Sub-Threshold Velocity | HIGH | 5 txns | 24 hours | Structuring |
+| SAR_THRESHOLD | Suspicious Activity Report Threshold | HIGH | $5,000 | — | SAR |
+| SAR_VELOCITY | SAR Velocity | HIGH | $25,000 | 24 hours | Structuring |
+| DORMANT_ACCOUNT_REACTIVATION | Dormant Account Reactivation | MEDIUM | $5,000 | 90 days | Behavioral |
+| BALANCE_MISMATCH | Balance Mismatch | MEDIUM | — | — | Behavioral |
+| ROUND_AMOUNT_PATTERN | Round Amount Pattern | MEDIUM | 3 txns | 30 days | Behavioral |
+| FRAUD_INDICATOR | Fraud Indicator | HIGH | — | — | Fraud |
+| HIGH_VALUE_TRANSFER | High Value Transfer | HIGH | $50,000 | — | SAR |
+
+## Using the AML Pack
+
+1. **Select AML Framework** — Choose "AML / FinCEN" when creating a new audit
+2. **Review Rules** — All 11 rules are loaded and active by default
+3. **Toggle Rules** — Disable any rules not applicable to your use case
+4. **Upload Data** — Upload your transaction CSV (must include fields like `amount`, `type`, `account`)
+5. **Confirm Mapping** — Approve the AI-suggested column mappings
+6. **Run Scan** — Execute the compliance scan
+7. **Review Violations** — Violations include policy excerpts, historical fines, and evidence
+
+<Note>
+All AML rules use **deterministic logic** — no AI models are used during enforcement. Confidence scores are based on rule quality, signal specificity, statistical anomalies, and Bayesian precision from user feedback.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="GDPR Compliance Pack" icon="shield-check" href="/frameworks/gdpr">
+    Explore the 15 GDPR rules for data protection compliance
+  </Card>
+  <Card title="SOC2 Compliance Pack" icon="lock" href="/frameworks/soc2">
+    Explore the 9 SOC2 rules for trust service criteria
+  </Card>
+  <Card title="Custom PDF Upload" icon="file-pdf" href="/frameworks/custom-pdf">
+    Upload your own regulatory documents
+  </Card>
+  <Card title="Rule Engine" icon="gear" href="/engine/architecture">
+    Learn how rules are evaluated
+  </Card>
+</CardGroup>

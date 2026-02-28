@@ -1,0 +1,249 @@
+---
+title: Configuration
+description: Environment variables and deployment settings for Yggdrasil
+---
+
+Yggdrasil is configured using environment variables. This page documents all available settings.
+
+## Environment Files
+
+Yggdrasil uses different environment files for different deployment contexts:
+
+- **`.env.local`** — Local development (not committed to git)
+- **`.env.example`** — Template with placeholder values (committed to git)
+- **`.env.production`** — Production values (not committed to git, used for reference)
+
+For local development, copy `.env.example` to `.env.local` and fill in your credentials:
+
+```bash
+cp .env.example .env.local
+```
+
+## Required Variables
+
+These variables **must** be set for the application to function.
+
+<ParamField path="NEXT_PUBLIC_SUPABASE_URL" type="string" required>
+  Your Supabase project URL.
+
+  **Format:** `https://your-project.supabase.co`
+
+  **Where to find it:** Supabase Dashboard → Settings → API → Project URL
+
+  **Example:**
+  ```env
+  NEXT_PUBLIC_SUPABASE_URL=https://wfcxaekocpfwkydphbtq.supabase.co
+  ```
+
+  <Warning>
+    This is a **public** variable (prefixed with `NEXT_PUBLIC_`). It will be embedded in the client-side JavaScript bundle and is visible to end users.
+  </Warning>
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_SUPABASE_ANON_KEY" type="string" required>
+  Your Supabase anonymous (public) API key.
+
+  **Format:** A long base64-encoded string starting with `eyJ`
+
+  **Where to find it:** Supabase Dashboard → Settings → API → Project API keys → `anon` `public`
+
+  **Example:**
+  ```env
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+  ```
+
+  <Info>
+    This key is **safe to expose** in client-side code. Supabase uses Row-Level Security (RLS) policies to enforce access control. The anon key only allows users to access their own data (filtered by `auth.uid()`).
+  </Info>
+</ParamField>
+
+<ParamField path="GEMINI_API_KEY" type="string" required>
+  Your Google AI Studio API key for Gemini.
+
+  **Where to find it:** [Google AI Studio](https://aistudio.google.com) → Get API Key
+
+  **Example:**
+  ```env
+  GEMINI_API_KEY=AIzaSyC...
+  ```
+
+  <Warning>
+    This is a **server-side only** secret. It should **NOT** have the `NEXT_PUBLIC_` prefix. Never commit this to git or expose it in client-side code.
+  </Warning>
+
+  **Used for:**
+  - Extracting rules from uploaded PDF policy documents
+  - Suggesting column mappings for uploaded CSV files
+  - Generating AI-powered remediation steps for violations
+</ParamField>
+
+## Optional Variables
+
+<ParamField path="NEXT_PUBLIC_APP_URL" type="string" default="http://localhost:3000">
+  The base URL of your application.
+
+  **Example (local):**
+  ```env
+  NEXT_PUBLIC_APP_URL=http://localhost:3000
+  ```
+
+  **Example (production):**
+  ```env
+  NEXT_PUBLIC_APP_URL=https://yggdrasil.example.com
+  ```
+
+  **Used for:**
+  - Generating absolute URLs for emails and redirects
+  - OAuth callback URLs (if using social auth)
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_DEMO_MODE" type="boolean" default="false">
+  Enable demo mode to bypass authentication with a hardcoded demo session.
+
+  **Example:**
+  ```env
+  NEXT_PUBLIC_DEMO_MODE=true
+  ```
+
+  <Warning>
+    **Never use demo mode in production.** This setting bypasses all authentication and is only intended for local testing and public demos.
+  </Warning>
+
+  When enabled:
+  - Users are automatically signed in with a demo account
+  - No email/password is required
+  - All data is associated with the demo user
+
+  When disabled (production):
+  - Users must sign up and authenticate via Supabase Auth
+  - Row-Level Security enforces data isolation between users
+</ParamField>
+
+## Production Configuration
+
+For production deployments, use these guidelines:
+
+### 1. Disable demo mode
+
+```env
+NEXT_PUBLIC_DEMO_MODE=false
+```
+
+### 2. Set production URLs
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-production-project.supabase.co
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+```
+
+### 3. Use production Supabase keys
+
+Ensure you're using the production Supabase project keys, not development keys. Production keys should have RLS policies enabled on all tables.
+
+### 4. Secure your Gemini API key
+
+- Store `GEMINI_API_KEY` as an environment variable in your deployment platform (Vercel, AWS, etc.)
+- **Never** commit it to git
+- Rotate the key periodically
+
+### 5. Enable HTTPS
+
+Your production deployment **must** use HTTPS. All Supabase auth flows require secure cookies.
+
+## Vercel Deployment
+
+If deploying to Vercel, add environment variables in the Vercel dashboard:
+
+1. Go to **Project Settings → Environment Variables**
+2. Add each variable with the appropriate scope (Production, Preview, Development)
+3. Redeploy to apply changes
+
+<Tip>
+  Vercel automatically injects `NEXT_PUBLIC_VERCEL_URL` which can be used as `NEXT_PUBLIC_APP_URL` in preview deployments.
+</Tip>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Public vs. Private Variables">
+    - **`NEXT_PUBLIC_*` variables** are embedded in the client-side JavaScript bundle. Anyone can read them by inspecting the browser's network tab or JavaScript console.
+    - **Private variables** (without the prefix) are only available server-side in Next.js API routes and Server Components.
+
+    **Rule:** Only use `NEXT_PUBLIC_` for values that are safe to expose (Supabase URL, anon key, app URL, feature flags).
+  </Accordion>
+
+  <Accordion title="Supabase Row-Level Security (RLS)">
+    Yggdrasil relies on **RLS policies** to enforce data isolation. Even though `NEXT_PUBLIC_SUPABASE_ANON_KEY` is public, users can only access data that belongs to them.
+
+    All tables (`policies`, `rules`, `scans`, `violations`, `pii_findings`) have RLS policies that filter rows by `auth.uid()`.
+
+    **Example RLS policy for `policies` table:**
+    ```sql
+    CREATE POLICY "Users can only see their own policies"
+    ON policies FOR SELECT
+    USING (auth.uid() = user_id);
+    ```
+  </Accordion>
+
+  <Accordion title="Gemini API Key Protection">
+    `GEMINI_API_KEY` is **server-side only**. It is never sent to the client.
+
+    To protect it:
+    - Store it as an environment variable (not in code)
+    - Use a secret manager in production (AWS Secrets Manager, Vercel Environment Variables, etc.)
+    - Rotate the key if it is ever leaked
+    - Monitor Google AI Studio usage to detect unauthorized access
+  </Accordion>
+
+  <Accordion title="Demo Mode Security">
+    Demo mode (`NEXT_PUBLIC_DEMO_MODE=true`) is **not secure** for multi-user deployments.
+
+    When enabled:
+    - All users share the same demo account
+    - No authentication is required
+    - Data is **not** isolated between users
+
+    **Only use demo mode for:**
+    - Local development
+    - Public read-only demos (with a separate demo database)
+
+    **Never use demo mode in production** with real user data.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### "Invalid Supabase URL" error
+
+- Ensure `NEXT_PUBLIC_SUPABASE_URL` is set and starts with `https://`
+- Verify the URL matches your Supabase project (check the dashboard)
+- Restart the dev server after changing `.env.local`
+
+### "Unauthorized" errors from Supabase
+
+- Check that `NEXT_PUBLIC_SUPABASE_ANON_KEY` is correct
+- Verify RLS policies are enabled on all tables
+- Ensure you're signed in (or demo mode is enabled)
+
+### "Gemini API key not found" error
+
+- Ensure `GEMINI_API_KEY` is set in `.env.local` (**without** `NEXT_PUBLIC_` prefix)
+- Restart the dev server after adding the key
+- Verify the key is valid by testing it in Google AI Studio
+
+### Changes to `.env.local` not taking effect
+
+- Restart the Next.js dev server (`npm run dev`)
+- Clear the browser cache and reload
+- Check for typos in variable names (environment variables are case-sensitive)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Yggdrasil for self-hosted deployment
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first compliance scan
+  </Card>
+</CardGroup>

@@ -1,0 +1,126 @@
+---
+title: Scans Table
+description: Schema for scan execution records with compliance scores and trend tracking
+---
+
+## Overview
+
+The `scans` table stores scan execution records with compliance scores, mapping configurations, and score history for trend tracking.
+
+## Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID, PK | Unique scan identifier |
+| `user_id` | UUID, FK | Owner (from `auth.uid()`) |
+| `policy_id` | UUID, FK | Policy scanned against |
+| `temporal_scale` | numeric | Time scaling factor (`1.0` or `24.0`) |
+| `mapping_config` | jsonb | Column mappings (CSV column → schema field) |
+| `data_source` | text | `'csv'` |
+| `file_name` | text | Original uploaded file name |
+| `record_count` | integer | Rows scanned (capped at 50K) |
+| `violation_count` | integer | True violation count (pre-cap) |
+| `compliance_score` | numeric | Score 0–100 |
+| `status` | text | `'pending'`, `'running'`, `'completed'`, `'failed'` |
+| `created_at` | timestamptz | Timestamp when scan was created |
+| `completed_at` | timestamptz | Timestamp when scan completed |
+| `upload_id` | UUID | Reference to in-memory upload store |
+| `mapping_id` | UUID | Reference to in-memory mapping store |
+| `audit_id` | UUID | Logical audit session |
+| `audit_name` | text | User-provided audit name |
+| `score_history` | jsonb | Array of score changes for compliance trend chart |
+
+## Status Lifecycle
+
+A scan progresses through the following statuses:
+
+1. **`pending`** — Scan has been created but not started
+2. **`running`** — Scan is currently executing
+3. **`completed`** — Scan finished successfully
+4. **`failed`** — Scan encountered an error
+
+## Mapping Config JSONB
+
+The `mapping_config` field stores column mappings from the uploaded CSV to the expected schema fields.
+
+### Example Mapping Config
+
+```json
+{
+  "amount": "transaction_amount",
+  "account": "account_id",
+  "transaction_type": "type",
+  "timestamp": "created_at"
+}
+```
+
+This maps:
+- CSV column `"transaction_amount"` → schema field `"amount"`
+- CSV column `"account_id"` → schema field `"account"`
+- CSV column `"type"` → schema field `"transaction_type"`
+- CSV column `"created_at"` → schema field `"timestamp"`
+
+## Score History JSONB
+
+The `score_history` field tracks compliance score changes over time, enabling trend visualization.
+
+### Example Score History
+
+```json
+[
+  {
+    "score": 85.2,
+    "timestamp": "2026-02-22T10:00:00Z",
+    "action": "scan_completed",
+    "violation_id": null
+  },
+  {
+    "score": 87.1,
+    "timestamp": "2026-02-22T10:05:00Z",
+    "action": "false_positive",
+    "violation_id": "abc-123"
+  },
+  {
+    "score": 85.8,
+    "timestamp": "2026-02-22T10:10:00Z",
+    "action": "approved",
+    "violation_id": "def-456"
+  }
+]
+```
+
+### Score History Actions
+
+| Action | Description |
+|---|---|
+| `scan_completed` | Initial score after scan completes |
+| `false_positive` | Score increased after dismissing a violation |
+| `approved` | Score decreased after approving a violation |
+
+<Info>
+**Why Track Score History?**
+
+Score history enables compliance trend charts that show how the compliance score changes as users review violations. This provides visibility into whether the dataset is becoming more or less compliant over time.
+</Info>
+
+## Temporal Scaling
+
+The `temporal_scale` field adjusts time-based calculations for known datasets:
+
+- **`1.0`** — Default scaling (1 hour = 1 hour)
+- **`24.0`** — For datasets where timestamps represent days instead of hours (e.g., IBM AML dataset)
+
+The engine auto-detects known dataset formats and adjusts `temporal_scale` accordingly.
+
+## In-Memory References
+
+<Warning>
+The `upload_id` and `mapping_id` fields reference **in-memory stores** on the server, not database tables. CSV data and column mappings are kept in memory during the audit flow and are not persisted to the database.
+</Warning>
+
+## Relationships
+
+- **Foreign Key to `auth.users`** — Each scan belongs to a user
+- **Foreign Key to `policies`** — Each scan evaluates one policy
+- **One-to-Many with `violations`** — Each scan produces multiple violations
+- **One-to-Many with `pii_findings`** — Each scan may have PII findings

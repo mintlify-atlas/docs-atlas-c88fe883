@@ -1,0 +1,207 @@
+---
+title: 'Upload CSV'
+api: 'POST /api/data/upload'
+description: 'Upload a CSV file for schema detection and automatic column mapping'
+---
+
+This endpoint handles CSV file uploads, parses the data, detects the dataset type, and suggests column mappings to standard fields. It supports automatic detection for IBM AML, PaySim, and generic compliance datasets.
+
+## Request
+
+<ParamField body="file" type="file" required>
+  CSV file to upload. Must be a valid CSV with headers in the first row.
+</ParamField>
+
+### Content Type
+
+```
+multipart/form-data
+```
+
+### Example Request
+
+```bash
+curl -X POST https://your-domain.com/api/data/upload \
+  -F "file=@transactions.csv"
+```
+
+## Response
+
+<ResponseField name="upload_id" type="string" required>
+  Unique identifier for the uploaded dataset. Use this ID in subsequent API calls.
+</ResponseField>
+
+<ResponseField name="row_count" type="number" required>
+  Total number of data rows in the uploaded CSV (excluding header).
+</ResponseField>
+
+<ResponseField name="headers" type="array" required>
+  Array of column names extracted from the CSV header row.
+</ResponseField>
+
+<ResponseField name="sample_rows" type="array" required>
+  First 5 rows of the dataset for preview purposes. Each row is an object with column names as keys.
+</ResponseField>
+
+<ResponseField name="detected_dataset" type="string" required>
+  Detected dataset type. Possible values:
+  - `IBM_AML` - IBM AML transaction dataset
+  - `PAYSIM` - PaySim financial simulation dataset
+  - `GENERIC` - Generic compliance dataset
+</ResponseField>
+
+<ResponseField name="suggested_mapping" type="object" required>
+  Suggested column mappings from CSV headers to standard fields. Keys are standard field names:
+  - `account` - Primary entity identifier (sender, account_id, user_id)
+  - `recipient` - Secondary entity identifier (receiver, destination)
+  - `amount` - Monetary value or transaction amount
+  - `step` - Timestamp or time-step column
+  - `type` - Category or classification column
+
+  Values are the corresponding CSV column names.
+</ResponseField>
+
+<ResponseField name="mapping_confidence" type="object" required>
+  Confidence scores (0-100) for each suggested mapping. Keys match `suggested_mapping` keys.
+  - Known datasets (IBM_AML, PAYSIM): 100% confidence
+  - Generic datasets: AI-generated confidence based on column analysis
+</ResponseField>
+
+<ResponseField name="temporal_scale" type="number" required>
+  Scaling factor for temporal data normalization:
+  - `24.0` - IBM AML (converts days to hours)
+  - `1.0` - PaySim and Generic (already in hours)
+</ResponseField>
+
+<ResponseField name="clarification_questions" type="array" required>
+  Advisory clarification questions to improve mapping accuracy. Empty array in MVP.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Dataset statistics for internal verification:
+  - `totalRows` - Total row count
+  - `columnStats` - Per-column statistics (type, cardinality, min/max/mean for numeric columns)
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "upload_id": "a3f12b45-8c7d-4e9f-b1a2-3c4d5e6f7g8h",
+  "row_count": 1250,
+  "headers": ["orig_acct", "bene_acct", "base_amt", "tran_timestamp", "tx_type"],
+  "sample_rows": [
+    {
+      "orig_acct": "ACCT_001",
+      "bene_acct": "ACCT_245",
+      "base_amt": 5000.00,
+      "tran_timestamp": 1609459200,
+      "tx_type": "WIRE"
+    },
+    {
+      "orig_acct": "ACCT_002",
+      "bene_acct": "ACCT_356",
+      "base_amt": 12500.50,
+      "tran_timestamp": 1609545600,
+      "tx_type": "ACH"
+    }
+  ],
+  "detected_dataset": "IBM_AML",
+  "suggested_mapping": {
+    "account": "orig_acct",
+    "recipient": "bene_acct",
+    "amount": "base_amt",
+    "step": "tran_timestamp",
+    "type": "tx_type"
+  },
+  "mapping_confidence": {
+    "account": 100,
+    "recipient": 100,
+    "amount": 100,
+    "step": 100,
+    "type": 100
+  },
+  "temporal_scale": 24.0,
+  "clarification_questions": [],
+  "metadata": {
+    "totalRows": 1250,
+    "columnStats": {
+      "base_amt": {
+        "type": "numeric",
+        "cardinality": 892,
+        "min": 100.00,
+        "max": 50000.00,
+        "mean": 8547.32
+      },
+      "tx_type": {
+        "type": "categorical",
+        "cardinality": 4
+      }
+    }
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code:
+  - `VALIDATION_ERROR` - No file provided or CSV parsing failed
+  - `INTERNAL_ERROR` - Unexpected server error
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error description.
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Additional error details (e.g., CSV parsing errors).
+</ResponseField>
+
+### Example Error Response
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Failed to parse CSV",
+  "details": [
+    {
+      "type": "Delimiter",
+      "code": "UndetectableDelimiter",
+      "message": "Unable to auto-detect delimiter",
+      "row": 0
+    }
+  ]
+}
+```
+
+## Dataset Detection Logic
+
+### IBM AML Detection
+Triggered when at least 3 of these columns are present:
+- `orig_acct`
+- `bene_acct`
+- `base_amt`
+- `tran_timestamp`
+- `tx_type`
+
+### PaySim Detection
+Triggered when at least 3 of these columns are present:
+- `nameOrig`
+- `nameDest`
+- `step`
+- `isFraud`
+
+### Generic Fallback
+For unrecognized datasets, the system uses AI to suggest mappings based on:
+- Column name patterns
+- Sample data analysis
+- Common compliance data structures
+
+## Notes
+
+- CSV files are parsed with headers and dynamic typing enabled
+- Empty lines are automatically skipped
+- Upload data is stored in memory with a time-limited session
+- Maximum sample size for AI analysis: first 3 rows
+- AI mapping uses Gemini for generic datasets with graceful degradation

@@ -1,0 +1,358 @@
+---
+title: 'Exporting Reports'
+description: 'How to export compliance reports as JSON, what data is included, and use cases'
+icon: 'download'
+---
+
+Yggdrasil exports full compliance reports as JSON, including violations, evidence, reviews, and severity summaries.
+
+## Export Endpoint
+
+Fetch a compliance report for any scan:
+
+```bash
+GET /api/export?scan_id={id}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scan_id` | UUID | No | Scan ID to export. If omitted, exports the latest scan. |
+| `format` | string | No | Export format. Currently only `json` is supported. |
+
+**Authentication:**
+- Requires a valid Supabase session (JWT bearer token in `Authorization` header)
+- Row-Level Security (RLS) ensures users can only export their own scans
+
+## Response Structure
+
+The export API returns a JSON object with the following structure:
+
+```json
+{
+  "report": {
+    "generated_at": "2026-02-28T10:30:00Z",
+    "policy": {
+      "id": "abc-123",
+      "name": "AML FinCEN Compliance"
+    },
+    "scan": {
+      "id": "def-456",
+      "score": 87.5,
+      "violation_count": 23,
+      "scan_date": "2026-02-28T10:15:00Z"
+    },
+    "violations": [
+      {
+        "id": "viol-001",
+        "rule_id": "aml_rule_1",
+        "rule_name": "Currency Transaction Report (CTR)",
+        "severity": "CRITICAL",
+        "account": "C123456789",
+        "amount": 15750.00,
+        "transaction_type": "WIRE",
+        "evidence": {
+          "account": "C123456789",
+          "recipient": "C987654321",
+          "amount": 15750.00,
+          "type": "WIRE",
+          "timestamp": "2024-03-15T14:32:00Z"
+        },
+        "threshold": 10000,
+        "actual_value": 15750.00,
+        "policy_excerpt": "Financial institutions must file a Currency Transaction Report for cash transactions over $10,000.",
+        "policy_section": "31 CFR 1010.311",
+        "explanation": "This transaction exceeds the CTR threshold of $10,000...",
+        "status": "approved",
+        "review_note": "Confirmed with compliance team - no CTR on file",
+        "reviewed_by": "user-789",
+        "reviewed_at": "2026-02-28T10:25:00Z",
+        "created_at": "2026-02-28T10:18:32Z"
+      }
+    ],
+    "reviews": [
+      {
+        "violation_id": "viol-001",
+        "status": "approved",
+        "reviewer": "user-789",
+        "note": "Confirmed with compliance team - no CTR on file",
+        "timestamp": "2026-02-28T10:25:00Z"
+      }
+    ],
+    "summary": {
+      "total_violations": 23,
+      "critical_severity": 5,
+      "high_severity": 12,
+      "medium_severity": 6
+    }
+  }
+}
+```
+
+## Data Fields
+
+### Report Metadata
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `generated_at` | ISO 8601 timestamp | When the report was generated |
+
+### Policy Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Policy ID |
+| `name` | string | Policy name (e.g., "AML FinCEN Compliance") |
+
+### Scan Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Scan ID |
+| `score` | number | Compliance score (0-100) |
+| `violation_count` | number | Total violations detected (pre-cap) |
+| `scan_date` | ISO 8601 timestamp | When the scan was created |
+
+### Violations Array
+
+Each violation includes:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Violation ID |
+| `rule_id` | string | Rule that was violated |
+| `rule_name` | string | Human-readable rule name |
+| `severity` | string | `CRITICAL`, `HIGH`, or `MEDIUM` |
+| `account` | string | Account or entity identifier |
+| `amount` | number | Transaction amount (if applicable) |
+| `transaction_type` | string | Transaction type (if applicable) |
+| `evidence` | object | Raw field values that triggered the rule |
+| `threshold` | number | Rule threshold (if applicable) |
+| `actual_value` | number | Actual value that breached threshold |
+| `policy_excerpt` | string | Quote from regulatory document |
+| `policy_section` | string | Section reference (e.g., "Article 5(1)(f)") |
+| `explanation` | string | Deterministic explanation of why the violation occurred |
+| `status` | string | `pending`, `approved`, or `false_positive` |
+| `review_note` | string | Reviewer's comment (nullable) |
+| `reviewed_by` | UUID | Reviewer user ID (nullable) |
+| `reviewed_at` | ISO 8601 timestamp | When the violation was reviewed (nullable) |
+| `created_at` | ISO 8601 timestamp | When the violation was detected |
+
+### Reviews Array
+
+Summarizes all reviewed violations:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `violation_id` | UUID | Violation that was reviewed |
+| `status` | string | `approved` or `false_positive` |
+| `reviewer` | UUID | User ID of reviewer |
+| `note` | string | Review comment (nullable) |
+| `timestamp` | ISO 8601 timestamp | When the review was submitted |
+
+### Summary Object
+
+Aggregate counts:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_violations` | number | Total violations in the report |
+| `critical_severity` | number | Count of Critical violations |
+| `high_severity` | number | Count of High violations |
+| `medium_severity` | number | Count of Medium violations |
+
+## Export from UI
+
+The dashboard includes an **Export** button with multiple options:
+
+**Export Menu:**
+- **Export as JSON** — Downloads the full report as a `.json` file
+- **Copy Report Link** — Copies a shareable link to the scan dashboard
+
+**JSON Export:**
+- Triggers `GET /api/export?scan_id={id}`
+- Downloads as `yggdrasil-report-{scanId}.json`
+- Includes all violations, reviews, and metadata
+
+<Tip>
+The JSON export includes both `violations` array (full details) and `reviews` array (summarized review history). Use `reviews` for audit logs.
+</Tip>
+
+## Use Cases
+
+### 1. Archive Compliance Records
+
+```bash
+# Export and archive the report
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://your-app.vercel.app/api/export?scan_id=abc-123" \
+  > "compliance-report-2024-03-15.json"
+
+# Store in S3 for long-term retention
+aws s3 cp compliance-report-2024-03-15.json \
+  s3://compliance-archives/2024/03/
+```
+
+### 2. Feed Violations into Ticketing System
+
+```typescript
+import { api } from './lib/api';
+
+// Fetch the report
+const { report } = await api.get('/export', { scan_id: scanId });
+
+// Create Jira tickets for Critical violations
+for (const violation of report.violations) {
+  if (violation.severity === 'CRITICAL' && violation.status === 'pending') {
+    await createJiraTicket({
+      summary: `[Compliance] ${violation.rule_name}`,
+      description: `
+        **Account**: ${violation.account}
+        **Policy**: ${violation.policy_section}
+        **Explanation**: ${violation.explanation}
+        **Evidence**: ${JSON.stringify(violation.evidence, null, 2)}
+      `,
+      priority: 'Highest',
+      labels: ['compliance', 'critical'],
+    });
+  }
+}
+```
+
+### 3. Build Custom Dashboards
+
+```typescript
+// Aggregate violations by rule
+const violationsByRule = report.violations.reduce((acc, v) => {
+  acc[v.rule_id] = (acc[v.rule_id] || 0) + 1;
+  return acc;
+}, {} as Record<string, number>);
+
+// Find noisiest rules
+const noisyRules = Object.entries(violationsByRule)
+  .sort(([, a], [, b]) => b - a)
+  .slice(0, 5);
+
+console.log('Top 5 noisiest rules:', noisyRules);
+```
+
+### 4. Compare Scans Over Time
+
+```typescript
+// Export multiple scans
+const scan1 = await api.get('/export', { scan_id: 'scan-1' });
+const scan2 = await api.get('/export', { scan_id: 'scan-2' });
+
+// Compare scores
+const scoreDelta = scan2.report.scan.score - scan1.report.scan.score;
+
+if (scoreDelta > 0) {
+  console.log(`✅ Compliance improved by ${scoreDelta.toFixed(1)} points`);
+} else {
+  console.log(`❌ Compliance declined by ${Math.abs(scoreDelta).toFixed(1)} points`);
+}
+
+// Compare violation counts by severity
+const criticalDelta =
+  scan2.report.summary.critical_severity - scan1.report.summary.critical_severity;
+
+console.log(`Critical violations: ${criticalDelta > 0 ? '+' : ''}${criticalDelta}`);
+```
+
+### 5. Generate Executive Summary
+
+```typescript
+// Generate a text summary from the export
+function generateSummary(report: any): string {
+  const { scan, summary, violations } = report;
+  const approvedCount = violations.filter((v: any) => v.status === 'approved').length;
+  const falsePositiveCount = violations.filter(
+    (v: any) => v.status === 'false_positive'
+  ).length;
+
+  return `
+Compliance Report - ${new Date(scan.scan_date).toLocaleDateString()}
+
+Compliance Score: ${scan.score.toFixed(1)}/100
+
+Violation Summary:
+- Total: ${summary.total_violations}
+- Critical: ${summary.critical_severity}
+- High: ${summary.high_severity}
+- Medium: ${summary.medium_severity}
+
+Review Status:
+- Confirmed: ${approvedCount}
+- False Positives: ${falsePositiveCount}
+- Pending: ${summary.total_violations - approvedCount - falsePositiveCount}
+
+Recommendation:
+${scan.score >= 90 ? '✅ System is compliant.' : '⚠️  Address Critical and High violations immediately.'}
+  `.trim();
+}
+
+const summary = generateSummary(report.report);
+console.log(summary);
+```
+
+## Filtering Violations
+
+The export includes **all violations** (pending, approved, false_positive). Filter on the client side:
+
+```typescript
+// Get only confirmed violations
+const confirmedViolations = report.violations.filter(
+  (v) => v.status === 'approved'
+);
+
+// Get only Critical violations
+const criticalViolations = report.violations.filter(
+  (v) => v.severity === 'CRITICAL'
+);
+
+// Get unreviewed violations
+const pendingViolations = report.violations.filter(
+  (v) => v.status === 'pending'
+);
+```
+
+## Best Practices
+
+1. **Export After Review**
+   - Complete your review (approve/dismiss violations) before exporting
+   - The export includes review status and notes
+
+2. **Archive Regularly**
+   - Export and archive reports after each scan
+   - Store in immutable storage (S3, GCS) with versioning enabled
+   - Use timestamped filenames (e.g., `report-2024-03-15.json`)
+
+3. **Include Metadata**
+   - Store scan ID, policy ID, and timestamp with each export
+   - Tag exports with audit name or compliance framework
+
+4. **Automate Exports**
+   - Set up a cron job or GitHub Action to export weekly
+   - Push exports to a secure data lake for trend analysis
+
+5. **Validate Schema**
+   - The export schema is stable, but validate structure before parsing
+   - Check for required fields (`id`, `severity`, `status`)
+
+## Future Formats
+
+Yggdrasil currently supports JSON exports only. Future formats under consideration:
+
+- **CSV** — Violations as a flat table (no nested evidence)
+- **PDF** — Executive summary with charts and key findings
+- **XLSX** — Excel workbook with multiple sheets (violations, reviews, summary)
+
+<Note>
+Request new export formats by opening an issue on the Yggdrasil GitHub repo.
+</Note>
+
+## What's Next?
+
+- [Audit Workflow](/guides/audit-workflow) — Complete end-to-end audit process
+- [Interpreting Violations](/guides/interpreting-violations) — Understand severity, confidence, and evidence

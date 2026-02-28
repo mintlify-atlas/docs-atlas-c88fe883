@@ -1,0 +1,125 @@
+---
+title: "Policy Upload"
+description: "Upload regulatory PDFs or select prebuilt frameworks to extract compliance rules"
+---
+
+Yggdrasil supports two ways to define compliance policies: uploading custom regulatory PDFs or selecting from prebuilt frameworks.
+
+## Prebuilt Frameworks
+
+Choose from three compliance frameworks with ready-to-use rules:
+
+### AML / FinCEN
+11 pre-configured rules covering:
+- Currency Transaction Reports (CTR) thresholds
+- Structuring detection (splitting transactions to avoid reporting)
+- Velocity limits (transaction frequency patterns)
+- Dormant account reactivation
+- Round amount patterns (suspicious even numbers)
+- Balance mismatches
+- Suspicious activity thresholds
+
+### GDPR
+14+ category rules covering:
+- Consent management
+- Data Protection Officer (DPO) requirements
+- Encryption at rest
+- Marketing consent
+- Personal data handling
+- Privacy Impact Assessments (PIAs)
+- Processing records
+- Right of access, erasure, and information
+- Third-country transfer safeguards
+
+### SOC 2
+5 trust principle rules:
+- Security (logical access controls)
+- Availability
+- Confidentiality (encryption requirements)
+- Processing Integrity
+- Privacy
+
+<Steps>
+  <Step title="Select a prebuilt framework">
+    Choose AML, GDPR, or SOC2 from the policy selection screen. All rules load instantly without AI processing.
+  </Step>
+  
+  <Step title="Review the rule set">
+    Preview the rules before proceeding. You can toggle individual rules on or off later.
+  </Step>
+  
+  <Step title="Continue to data upload">
+    Once selected, proceed to upload your dataset.
+  </Step>
+</Steps>
+
+## Custom PDF Upload
+
+Upload any regulatory document to extract custom compliance rules using AI.
+
+<Steps>
+  <Step title="Upload your PDF">
+    Drag and drop a regulatory PDF (max 500,000 characters). The system supports most PDF formats except scanned images without OCR.
+  </Step>
+  
+  <Step title="AI extraction process">
+    Gemini 2.5 Flash analyzes the document and extracts enforceable rules using the **Signal Specificity Framework**.
+    
+    Each rule must combine multiple signals to reach a minimum specificity threshold of 2.0:
+    - **Weak Signals (0.5):** Single thresholds, state checks
+    - **Medium Signals (1.0):** Temporal windows, behavioral shifts
+    - **Strong Signals (2.0+):** Multi-condition logic, cross-field dependencies
+    
+    This prevents broad, single-threshold rules that generate false positives.
+  </Step>
+  
+  <Step title="Review extracted rules">
+    After extraction completes, you'll see:
+    - Total rules extracted
+    - Each rule's severity (CRITICAL, HIGH, MEDIUM)
+    - Policy excerpts justifying each rule
+    - Compound conditions (AND/OR logic trees)
+  </Step>
+</Steps>
+
+<Note>
+  **Transparent design:** Extracted rules show the exact policy excerpt they're derived from, making AI reasoning auditable.
+</Note>
+
+## What Happens Behind the Scenes
+
+When you upload a PDF:
+
+1. **Text extraction:** The system parses your PDF using unpdf (supports up to 500K characters)
+2. **AI analysis:** Gemini applies the Signal Specificity Framework to identify enforceable rules
+3. **Rule structuring:** Each rule is formatted as a compound boolean expression (AND/OR trees)
+4. **Database storage:** Rules are saved to your policy with metadata (severity, thresholds, policy sections)
+
+<Warning>
+  PDFs must contain extractable text. Scanned images without OCR will fail. If extraction fails, you'll receive an error message prompting you to check the file format.
+</Warning>
+
+## Rule Quality Standards
+
+All extracted rules (prebuilt or custom) must meet these criteria:
+
+- **Combined specificity ≥ 2.0:** No single-condition rules allowed
+- **Explainable:** Every rule links back to a policy excerpt
+- **Executable:** Conditions use supported operators (equals, greater_than, contains, IN, BETWEEN, etc.)
+- **Testable:** Rules can be toggled on/off for testing
+
+## Supported PDF Formats
+
+✅ Native PDFs with selectable text  
+✅ Text-based regulatory documents  
+✅ Policy documents up to 500K characters  
+❌ Scanned images without OCR  
+❌ Encrypted or password-protected PDFs  
+
+## Next Steps
+
+After uploading your policy:
+
+1. Upload your dataset → [Data Upload](/features/data-upload)
+2. Review and toggle rules as needed
+3. Proceed to column mapping

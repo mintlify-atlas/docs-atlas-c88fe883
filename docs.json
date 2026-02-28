@@ -1,122 +1,164 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Yggdrasil",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1E40AF",
+    "light": "#60A5FA",
+    "dark": "#1E3A8A"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Basit-Ali0/Yggdrasil"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Basit-Ali0/Yggdrasil"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
-              "index",
+              "introduction",
+              "how-it-works",
+              "key-features"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
               "quickstart",
-              "development"
+              "installation",
+              "configuration"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/policy-upload",
+              "features/data-upload",
+              "features/column-mapping",
+              "features/compliance-scanning",
+              "features/violation-review",
+              "features/pii-detection",
+              "features/remediation"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Policy Frameworks",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "frameworks/overview",
+              "frameworks/aml",
+              "frameworks/gdpr",
+              "frameworks/soc2",
+              "frameworks/custom-pdf"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Rule Engine",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "engine/architecture",
+              "engine/rule-types",
+              "engine/operators",
+              "engine/confidence-scoring",
+              "engine/explainability",
+              "engine/bayesian-feedback"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/audit-workflow",
+              "guides/rule-management",
+              "guides/interpreting-violations",
+              "guides/exporting-reports"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Authentication",
             "pages": [
-              "api-reference/introduction"
+              "api/authentication"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Audits",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/audits/create-audit"
+            ]
+          },
+          {
+            "group": "Policies",
+            "pages": [
+              "api/policies/ingest-pdf",
+              "api/policies/load-prebuilt",
+              "api/policies/list-rules",
+              "api/policies/manage-rules"
+            ]
+          },
+          {
+            "group": "Data Management",
+            "pages": [
+              "api/data/upload-csv",
+              "api/data/confirm-mapping",
+              "api/data/pii-scan"
+            ]
+          },
+          {
+            "group": "Scanning",
+            "pages": [
+              "api/scan/run-scan",
+              "api/scan/get-status",
+              "api/scan/scan-history"
+            ]
+          },
+          {
+            "group": "Violations",
+            "pages": [
+              "api/violations/list-violations",
+              "api/violations/get-violation",
+              "api/violations/review-violation",
+              "api/violations/generate-remediation",
+              "api/violations/list-cases"
+            ]
+          },
+          {
+            "group": "Compliance",
+            "pages": [
+              "api/compliance/get-score",
+              "api/compliance/export-report",
+              "api/compliance/validate"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Schema",
+            "pages": [
+              "database/overview",
+              "database/policies-table",
+              "database/rules-table",
+              "database/scans-table",
+              "database/violations-table",
+              "database/pii-findings-table"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

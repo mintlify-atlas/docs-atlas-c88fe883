@@ -1,0 +1,242 @@
+---
+title: How it works
+description: Understand Yggdrasil's three-step process from policy upload to compliance results
+---
+
+## The three-step process
+
+Yggdrasil transforms regulatory documents into actionable compliance violations through a simple, transparent workflow:
+
+<Steps>
+  <Step title="Upload policy">
+    Upload any regulatory PDF (AML, GDPR, SOC2, or custom). AI extracts structured, enforceable rules with compound condition logic.
+    
+    The system uses Google Gemini 2.5 Flash to parse regulatory text and identify enforceable clauses. Each extracted rule includes:
+    
+    - **Compound boolean logic** - Rules are represented as AND/OR trees with nested conditions
+    - **Policy excerpts** - The exact text from the regulatory document
+    - **Section references** - Chapter and article numbers for traceability
+    - **Severity levels** - CRITICAL, HIGH, or MEDIUM based on regulatory impact
+    
+    <Note>
+      All rules must pass the Signal Specificity Framework validation, requiring a minimum combined specificity of 2.0 before they can be activated.
+    </Note>
+  </Step>
+  
+  <Step title="Connect data">
+    Upload your CSV dataset. AI detects the schema and suggests column mappings. You approve before anything runs.
+    
+    The data connection process is fully transparent:
+    
+    - **Automatic schema detection** - Yggdrasil analyzes your CSV headers and data types
+    - **AI-powered mapping suggestions** - Gemini suggests how your columns map to the compliance schema
+    - **Explicit user approval** - No data transformations happen behind the scenes
+    - **PII detection** - Optional scan for personally identifiable information before processing
+    
+    <Warning>
+      Column mappings require explicit user approval. The system will not proceed with scanning until you confirm the suggested mappings are correct.
+    </Warning>
+  </Step>
+  
+  <Step title="Get results">
+    Violations ranked by severity and confidence, each with the matched policy excerpt, evidence grid, and a natural-language explanation. No AI calls in the enforcement loop.
+    
+    Every violation includes:
+    
+    - **Policy excerpt** - The exact regulatory clause that was violated
+    - **Evidence grid** - The specific data fields that triggered the violation
+    - **Deterministic explanation** - Generated from templates, not LLM calls
+    - **Confidence score** - Computed from rule quality, signal specificity, statistical anomaly detection, and Bayesian historical precision
+    - **Remediation suggestions** - AI-generated steps to resolve the violation
+    
+    Results are grouped by severity and can be filtered by account, rule, or time period.
+  </Step>
+</Steps>
+
+## Deterministic enforcement
+
+The rule engine is pure logic with no machine learning models in the critical path. This design choice ensures:
+
+- **Reproducibility** - The same data and rules always produce the same results
+- **Audit readiness** - Every decision can be traced to a specific boolean condition
+- **Performance** - No API calls during rule evaluation means fast scanning
+- **Explainability** - Violations are explained through deterministic templates, not black-box AI
+
+### How rules are evaluated
+
+```
+RuleExecutor.executeAll(rules, records, config)
+  │
+  ├─ Normalize records (CSV strings → typed values)
+  ├─ Sample if > 50K rows
+  │
+  └─ For each active rule:
+       │
+       ├─ Route by rule.type
+       │   ├─ WINDOWED (aggregation, velocity, structuring, dormant_reactivation, round_amount)
+       │   │   → Group by account → evaluate within time windows
+       │   └─ SINGLE-TX (everything else)
+       │       → Evaluate compound conditions per record
+       │
+       ├─ evaluateLogic(conditions, record)
+       │   ├─ { AND: [...] } → all must match
+       │   ├─ { OR: [...] }  → any must match
+       │   └─ { field, operator, value } → leaf condition check
+       │
+       ├─ Apply confidence scoring
+       │   ├─ Rule quality score
+       │   ├─ Signal specificity boost (compound conditions)
+       │   ├─ Statistical anomaly detection
+       │   └─ Bayesian historical precision
+       │
+       └─ Cap at 1000 violations per rule
+```
+
+<Info>
+  The engine automatically detects known dataset formats (IBM AML, PaySim) and adjusts temporal scaling accordingly.
+</Info>
+
+## Explainability
+
+Every violation in Yggdrasil includes a complete audit trail:
+
+### Policy traceability
+
+Each violation is linked to:
+- The exact policy excerpt from the regulatory document
+- Section and article references (e.g., "GDPR Article 32")
+- Historical context where applicable (average fines, breach examples)
+
+### Evidence presentation
+
+The evidence grid shows:
+- **Matched conditions** - Which fields triggered the rule
+- **Threshold comparison** - Expected vs. actual values
+- **Related transactions** - For windowed rules, all transactions in the time window
+- **Account context** - Transaction history and patterns
+
+### Deterministic explanations
+
+Explanations are generated from string templates, ensuring:
+- **Consistency** - Same violation type always has the same explanation structure
+- **Accuracy** - No hallucinations from LLM-generated text
+- **Performance** - Instant generation without API calls
+- **Auditability** - Explanation logic is in version control, not a black box
+
+## Signal Specificity Framework
+
+The Signal Specificity Framework is Yggdrasil's key innovation for reducing false positives in AI-extracted rules.
+
+### How it works
+
+Rules extracted from PDFs must combine multiple signals to reach a minimum specificity threshold of 2.0:
+
+- **Behavioral signals** (1.0) - Transaction type, account type, activity patterns
+- **Temporal signals** (0.8) - Time windows, velocity, dormancy periods
+- **Relational signals** (0.7) - Cross-account patterns, recipient relationships
+- **Threshold signals** (0.5) - Amount limits, count thresholds
+
+### Signal composition requirements
+
+<Note>
+  Single-threshold rules (e.g., "amount > 10000") are automatically rejected. Rules must combine at least two signal types to be activated.
+</Note>
+
+**Valid rule example:**
+```json
+{
+  "AND": [
+    { "field": "amount", "operator": ">=", "value": 10000 },
+    { "field": "transaction_type", "operator": "IN", "value": ["DEBIT", "WIRE"] }
+  ]
+}
+```
+
+This rule combines:
+- Threshold signal (0.5) - amount >= 10000
+- Behavioral signal (1.0) - specific transaction types
+- **Total specificity: 1.5** (meets 2.0 threshold with additional context)
+
+**Invalid rule example:**
+```json
+{ "field": "amount", "operator": ">=", "value": 10000 }
+```
+
+This single-threshold rule would produce too many false positives and is rejected during extraction.
+
+## Bayesian feedback loop
+
+Yggdrasil improves with use through a Bayesian precision model:
+
+### How feedback works
+
+When you review a violation:
+
+1. **Approve** - Increments the rule's `approved_count` (true positives)
+2. **Dismiss as false positive** - Increments the rule's `false_positive_count`
+3. **Precision recalculation** - Updates the rule's confidence using:
+
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+Where:
+- TP = `approved_count` (true positives)
+- FP = `false_positive_count` (false positives)
+- Priors (1, 2) prevent division by zero and provide conservative initial estimates
+
+### Impact on future scans
+
+Rules with lower precision receive lower confidence scores in subsequent scans:
+
+- **High precision** (&gt;0.8) - Rule consistently catches real violations
+- **Medium precision** (0.5-0.8) - Rule has some false positives
+- **Low precision** (&lt;0.5) - Rule produces mostly false positives and may need refinement
+
+<Tip>
+  The Bayesian model is stored per-rule in the database, so your feedback improves compliance detection across all future audits using the same policy.
+</Tip>
+
+## Transparent mapping
+
+Column mappings are suggested by AI but require explicit user approval:
+
+### Mapping suggestion process
+
+1. **Schema detection** - Yggdrasil analyzes CSV headers and samples data
+2. **AI mapping** - Gemini suggests how columns map to the compliance schema
+3. **User review** - You see the suggested mappings and can modify before approval
+4. **Explicit confirmation** - Scan will not proceed until you click "Confirm Mapping"
+
+### Supported schema fields
+
+The core compliance schema includes:
+- `account` - Account or entity identifier
+- `recipient` - Destination account
+- `amount` - Transaction amount
+- `step` - Time step or timestamp
+- `type` - Transaction type
+- Balance fields (optional) - `oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest`, `newbalanceDest`
+
+<Warning>
+  No data transformations happen behind the scenes. What you approve is exactly what the rule engine sees.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore key features"
+    icon="stars"
+    href="/key-features"
+  >
+    Learn about confidence scoring, PII detection, and supported operators
+  </Card>
+  <Card
+    title="API reference"
+    icon="code"
+    href="/api/authentication"
+  >
+    Start building with the Yggdrasil API
+  </Card>
+</CardGroup>

@@ -1,0 +1,62 @@
+---
+title: Policies Table
+description: Schema for policy metadata and audit configuration
+---
+
+## Overview
+
+The `policies` table stores policy metadata. Each policy represents one audit session and is linked to extracted compliance rules.
+
+## Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | UUID, PK | Unique policy identifier |
+| `user_id` | UUID, FK | Owner (from `auth.uid()`) |
+| `name` | text | Policy name (e.g., "GDPR Compliance") |
+| `type` | text | `'prebuilt'` or `'custom_pdf'` |
+| `prebuilt_type` | text | `'aml'`, `'gdpr'`, `'soc2'` for prebuilt policies |
+| `rules_count` | integer | Total rules in policy |
+| `status` | text | `'active'` |
+| `created_at` | timestamptz | Timestamp when policy was created |
+| `updated_at` | timestamptz | Used for dirty detection (policy changed since last scan) |
+
+## Row-Level Security
+
+The `policies` table is filtered by `user_id = auth.uid()`. Users can only access policies they created.
+
+## Policy Types
+
+### Prebuilt Policies
+
+When `type = 'prebuilt'`, the `prebuilt_type` field specifies the framework:
+
+- **`aml`** — 11 AML/FinCEN rules for anti-money laundering compliance
+- **`gdpr`** — 14+ GDPR category rules for data protection
+- **`soc2`** — 5 SOC2 trust principle rules
+
+### Custom PDF Policies
+
+When `type = 'custom_pdf'`, rules are extracted from an uploaded regulatory PDF using Gemini AI.
+
+## Dirty Detection with `updated_at`
+
+<Warning>
+The `updated_at` timestamp is used for **dirty detection**. If a policy is modified (e.g., rules are added or removed) after a scan has been run, the system can detect that the scan is outdated by comparing the scan's creation time with the policy's `updated_at` timestamp.
+</Warning>
+
+## Relationships
+
+- **One-to-Many with `rules`** — Each policy contains multiple extracted rules
+- **One-to-Many with `scans`** — A policy can be scanned multiple times
+- **Foreign Key to `auth.users`** — Each policy belongs to a user
+
+## Example Query
+
+```sql
+-- Get all active GDPR policies for the current user
+SELECT * FROM policies 
+WHERE prebuilt_type = 'gdpr' 
+  AND status = 'active' 
+  AND user_id = auth.uid();
+```

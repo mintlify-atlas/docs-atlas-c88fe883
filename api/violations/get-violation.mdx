@@ -1,0 +1,203 @@
+---
+title: "Get Violation Details"
+api: "GET /api/violations/{id}"
+description: "Retrieve detailed information about a specific violation including evidence, policy context, and historical data"
+---
+
+Fetch comprehensive details for a single violation, including historical context from live Kaggle GDPR breach data.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  Unique violation identifier
+</ParamField>
+
+## Response
+
+<ResponseField name="id" type="string">
+  Unique violation identifier
+</ResponseField>
+
+<ResponseField name="scan_id" type="string">
+  ID of the scan that detected this violation
+</ResponseField>
+
+<ResponseField name="rule_id" type="string">
+  Identifier of the violated rule
+</ResponseField>
+
+<ResponseField name="rule_name" type="string">
+  Human-readable rule name
+</ResponseField>
+
+<ResponseField name="severity" type="string">
+  Severity level: `CRITICAL`, `HIGH`, or `MEDIUM`
+</ResponseField>
+
+<ResponseField name="account" type="string">
+  Account or entity associated with the violation
+</ResponseField>
+
+<ResponseField name="amount" type="number">
+  Transaction amount that triggered the violation
+</ResponseField>
+
+<ResponseField name="transaction_type" type="string">
+  Type of transaction
+</ResponseField>
+
+<ResponseField name="evidence" type="object">
+  Detailed evidence data supporting the violation. Contains transaction-specific fields, metrics, and contextual information.
+</ResponseField>
+
+<ResponseField name="threshold" type="number">
+  Policy threshold that was exceeded
+</ResponseField>
+
+<ResponseField name="actual_value" type="number">
+  Actual value that exceeded the threshold
+</ResponseField>
+
+<ResponseField name="policy_excerpt" type="string">
+  Relevant excerpt from the policy document
+</ResponseField>
+
+<ResponseField name="policy_section" type="string">
+  Section reference in the policy (e.g., Article 33, Section 12.4)
+</ResponseField>
+
+<ResponseField name="explanation" type="string">
+  Detailed explanation of why this is a violation
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Review status: `pending`, `approved`, or `false_positive`
+</ResponseField>
+
+<ResponseField name="review_note" type="string" nullable>
+  Notes added during review
+</ResponseField>
+
+<ResponseField name="reviewed_at" type="string" nullable>
+  ISO 8601 timestamp when the violation was reviewed
+</ResponseField>
+
+<ResponseField name="rule_accuracy" type="number" nullable>
+  Accuracy score for this rule (populated by /api/validate)
+</ResponseField>
+
+<ResponseField name="historical_context" type="object" nullable>
+  Historical breach data from live Kaggle GDPR dataset
+  
+  <ResponseField name="article_reference" type="string">
+    GDPR article number (e.g., "Art. 33")
+  </ResponseField>
+  
+  <ResponseField name="avg_fine" type="string">
+    Average fine for this violation type (e.g., "€125.5k (Live Kaggle Data)")
+  </ResponseField>
+  
+  <ResponseField name="max_fine" type="string">
+    Maximum fine recorded for this violation type
+  </ResponseField>
+  
+  <ResponseField name="total_cases" type="integer">
+    Total number of cases in the dataset for this article
+  </ResponseField>
+  
+  <ResponseField name="breach_example" type="string">
+    Example case summary from real breach data
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="full_article_text" type="array" nullable>
+  Full text of the referenced GDPR article, fetched from the knowledge base
+  
+  <ResponseField name="section" type="string">
+    Section identifier
+  </ResponseField>
+  
+  <ResponseField name="text" type="string">
+    Article text content
+  </ResponseField>
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://api.example.com/api/violations/viol_789xyz" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch('/api/violations/viol_789xyz', {
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  }
+});
+const violation = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.example.com/api/violations/viol_789xyz',
+    headers={'Authorization': 'Bearer YOUR_TOKEN'}
+)
+violation = response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "id": "viol_789xyz",
+  "scan_id": "abc123",
+  "rule_id": "GDPR_BREACH_NOTIFICATION",
+  "rule_name": "Data Breach Notification Required",
+  "severity": "CRITICAL",
+  "account": "CUSTOMER-001",
+  "amount": 0,
+  "transaction_type": null,
+  "evidence": {
+    "breach_date": "2024-01-15",
+    "affected_records": 5000,
+    "notification_deadline": "2024-01-18",
+    "days_overdue": 3,
+    "data_types": ["email", "phone", "address"]
+  },
+  "threshold": 72,
+  "actual_value": 144,
+  "policy_excerpt": "In the case of a personal data breach, the controller shall without undue delay and, where feasible, not later than 72 hours after having become aware of it, notify the personal data breach to the supervisory authority.",
+  "policy_section": "GDPR Article 33(1)",
+  "explanation": "Data breach affecting 5,000 records was not reported to the supervisory authority within 72 hours. Notification is 3 days overdue.",
+  "status": "pending",
+  "review_note": null,
+  "reviewed_at": null,
+  "rule_accuracy": null,
+  "historical_context": {
+    "article_reference": "Art. 33",
+    "avg_fine": "€125.5k (Live Kaggle Data)",
+    "max_fine": "€450.0k",
+    "total_cases": 127,
+    "breach_example": "Healthcare provider failed to notify breach of 3,200 patient records within required timeframe. Fined €180,000 by Irish DPC."
+  },
+  "full_article_text": [
+    {
+      "section": "1",
+      "text": "In the case of a personal data breach, the controller shall without undue delay and, where feasible, not later than 72 hours after having become aware of it, notify the personal data breach to the supervisory authority..."
+    },
+    {
+      "section": "2",
+      "text": "The notification referred to in paragraph 1 shall at least..."
+    }
+  ]
+}
+```
+</ResponseExample>
+
+## Notes
+
+- Historical context is automatically enriched with live data from the Kaggle GDPR breach dataset when available
+- The `full_article_text` provides complete regulatory text for deeper analysis
+- Evidence structure varies by rule type (AML violations have different fields than GDPR violations)

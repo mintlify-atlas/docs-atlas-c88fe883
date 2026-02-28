@@ -1,0 +1,252 @@
+---
+title: "Get Scan Status"
+api: "GET /api/scan/{id}"
+description: "Poll the status and results of a running or completed scan"
+---
+
+## Overview
+
+Retrieve the current status, progress, and results of a compliance scan. Use this endpoint to poll for completion after triggering a scan via `/api/scan/run`.
+
+Includes delta analysis comparing the current scan with the previous scan for the same policy, showing new, resolved, and unchanged violations.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique scan ID returned from `/api/scan/run`
+</ParamField>
+
+## Response
+
+<ResponseField name="id" type="string" required>
+  The scan's unique identifier
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Current scan status. Possible values:
+  - `pending` - Scan is queued
+  - `running` - Scan is in progress
+  - `completed` - Scan finished successfully
+  - `failed` - Scan encountered an error
+</ResponseField>
+
+<ResponseField name="violation_count" type="number" required>
+  Total number of violations detected. Returns `0` for in-progress scans
+</ResponseField>
+
+<ResponseField name="compliance_score" type="number" required>
+  Compliance score from 0-100, where 100 is perfect compliance. Returns `0` for in-progress scans
+</ResponseField>
+
+<ResponseField name="rules_processed" type="number" required>
+  Number of rules completed. Equals `rules_total` when status is `completed`
+</ResponseField>
+
+<ResponseField name="rules_total" type="number" required>
+  Total number of rules in the policy
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp when the scan was created
+</ResponseField>
+
+<ResponseField name="completed_at" type="string">
+  ISO 8601 timestamp when the scan completed. `null` for in-progress scans
+</ResponseField>
+
+<ResponseField name="audit_name" type="string">
+  Human-readable audit name if provided during scan creation
+</ResponseField>
+
+<ResponseField name="record_count" type="number" required>
+  Number of records processed in the scan (up to 50,000)
+</ResponseField>
+
+<ResponseField name="policy_id" type="string">
+  The policy ID used for this scan
+</ResponseField>
+
+<ResponseField name="upload_id" type="string">
+  The upload ID used for this scan
+</ResponseField>
+
+<ResponseField name="mapping_id" type="string">
+  The mapping ID used for this scan
+</ResponseField>
+
+<ResponseField name="audit_id" type="string">
+  The audit ID if this scan is part of an audit
+</ResponseField>
+
+<ResponseField name="mapping_config" type="object">
+  The column mapping configuration used for this scan
+</ResponseField>
+
+<ResponseField name="temporal_scale" type="string">
+  The temporal scale used for time-based rules (e.g., "daily", "monthly")
+</ResponseField>
+
+<ResponseField name="score_history" type="array">
+  Array of score change events showing compliance score evolution
+  
+  <Expandable title="Score History Item">
+    <ResponseField name="score" type="number">
+      Compliance score at this point in time
+    </ResponseField>
+    
+    <ResponseField name="timestamp" type="string">
+      ISO 8601 timestamp of the score event
+    </ResponseField>
+    
+    <ResponseField name="action" type="string">
+      The action that triggered the score change (e.g., "scan_completed", "violation_resolved")
+    </ResponseField>
+    
+    <ResponseField name="violation_id" type="string">
+      The violation ID if the score change was due to a violation status change
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="delta" type="object">
+  Comparison with the previous scan for the same policy. `null` if no previous scan exists
+  
+  <Expandable title="Delta Details">
+    <ResponseField name="new_count" type="number">
+      Number of new violations not present in the previous scan
+    </ResponseField>
+    
+    <ResponseField name="resolved_count" type="number">
+      Number of violations from the previous scan that no longer appear
+    </ResponseField>
+    
+    <ResponseField name="unchanged_count" type="number">
+      Number of violations that appear in both scans
+    </ResponseField>
+    
+    <ResponseField name="previous_scan_id" type="string">
+      The ID of the previous scan used for comparison
+    </ResponseField>
+    
+    <ResponseField name="previous_violation_count" type="number">
+      Total violations in the previous scan
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Response - Running
+
+```json
+{
+  "id": "abc12345-def6-7890-ghij-klmnopqrstuv",
+  "status": "running",
+  "violation_count": 0,
+  "compliance_score": 0,
+  "rules_processed": 8,
+  "rules_total": 15,
+  "created_at": "2024-01-15T10:30:00Z",
+  "completed_at": null,
+  "audit_name": "Q1 2024 Compliance Audit",
+  "record_count": 42000,
+  "policy_id": "550e8400-e29b-41d4-a716-446655440000",
+  "upload_id": "123e4567-e89b-12d3-a456-426614174000",
+  "mapping_id": "789e0123-e45b-67c8-d901-234567890123",
+  "audit_id": null,
+  "mapping_config": {
+    "amount": "Transaction Amount",
+    "account": "Account ID",
+    "timestamp": "Date"
+  },
+  "temporal_scale": "daily",
+  "score_history": [],
+  "delta": null
+}
+```
+
+## Example Response - Completed
+
+```json
+{
+  "id": "abc12345-def6-7890-ghij-klmnopqrstuv",
+  "status": "completed",
+  "violation_count": 23,
+  "compliance_score": 87.5,
+  "rules_processed": 15,
+  "rules_total": 15,
+  "created_at": "2024-01-15T10:30:00Z",
+  "completed_at": "2024-01-15T10:30:04Z",
+  "audit_name": "Q1 2024 Compliance Audit",
+  "record_count": 42000,
+  "policy_id": "550e8400-e29b-41d4-a716-446655440000",
+  "upload_id": "123e4567-e89b-12d3-a456-426614174000",
+  "mapping_id": "789e0123-e45b-67c8-d901-234567890123",
+  "audit_id": null,
+  "mapping_config": {
+    "amount": "Transaction Amount",
+    "account": "Account ID",
+    "timestamp": "Date"
+  },
+  "temporal_scale": "daily",
+  "score_history": [
+    {
+      "score": 87.5,
+      "timestamp": "2024-01-15T10:30:04Z",
+      "action": "scan_completed",
+      "violation_id": null
+    }
+  ],
+  "delta": {
+    "new_count": 5,
+    "resolved_count": 12,
+    "unchanged_count": 18,
+    "previous_scan_id": "prev1234-5678-90ab-cdef-ghijklmnopqr",
+    "previous_violation_count": 30
+  }
+}
+```
+
+## Error Responses
+
+### 404 Not Found
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Scan not found"
+}
+```
+
+## Delta Analysis
+
+The `delta` field provides insights into how violations have changed compared to the previous scan:
+
+- **New violations** - Issues that appeared in this scan but not the previous one
+- **Resolved violations** - Issues from the previous scan that no longer appear
+- **Unchanged violations** - Issues that persist across both scans
+
+Violations are matched using a signature of `rule_id:account`, meaning the same rule triggered on the same account.
+
+## Polling Strategy
+
+Since scans complete synchronously (< 5 seconds), you can poll immediately after creation:
+
+```javascript
+// Start scan
+const { scan_id } = await fetch('/api/scan/run', {
+  method: 'POST',
+  body: JSON.stringify({ policy_id, upload_id, mapping_id })
+}).then(r => r.json());
+
+// Poll for completion
+const status = await fetch(`/api/scan/${scan_id}`).then(r => r.json());
+
+if (status.status === 'completed') {
+  console.log(`Scan complete: ${status.compliance_score}% compliant`);
+  console.log(`Found ${status.violation_count} violations`);
+}
+```
+
+## Related Endpoints
+
+- [Run Scan](/api/scan/run-scan) - Trigger a new compliance scan
+- [Scan History](/api/scan/scan-history) - List all completed scans

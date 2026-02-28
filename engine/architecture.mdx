@@ -1,0 +1,211 @@
+---
+title: 'Rule Engine Architecture'
+description: 'Understand how the Yggdrasil rule engine executes compliance rules'
+---
+
+## Overview
+
+The Yggdrasil rule engine is a **deterministic, audit-ready enforcement system** that evaluates compliance rules against your dataset without ML models in the critical path. Every violation is traceable, reproducible, and explainable.
+
+## Execution Flow
+
+The rule engine follows a multi-stage pipeline:
+
+```
+RuleExecutor.executeAll(rules, records, config)
+  │
+  ├─ Normalize records (CSV strings → typed values)
+  ├─ Sample if > 50K rows
+  │
+  └─ For each active rule:
+       │
+       ├─ Route by rule.type
+       │   ├─ WINDOWED (aggregation, velocity, structuring, dormant_reactivation, round_amount)
+       │   │   → Group by account → evaluate within time windows
+       │   └─ SINGLE-TX (everything else)
+       │       → Evaluate compound conditions per record
+       │
+       ├─ evaluateLogic(conditions, record)
+       │   ├─ { AND: [...] } → all must match
+       │   ├─ { OR: [...] }  → any must match
+       │   └─ { field, operator, value } → leaf condition check
+       │
+       ├─ Apply confidence scoring
+       │   ├─ Rule quality score
+       │   ├─ Signal specificity boost (compound conditions)
+       │   ├─ Statistical anomaly detection
+       │   └─ Bayesian historical precision
+       │
+       └─ Cap at 1000 violations per rule
+```
+
+### 1. Normalization
+
+Raw CSV data is normalized using the confirmed column mapping:
+
+```typescript
+// From rule-executor.ts:135-138
+const normalized: NormalizedRecord[] = rawRecords.map((r) =>
+    normalizeRecord(r, config.columnMapping)
+);
+```
+
+This converts CSV strings to typed values and maps user columns to the standard schema.
+
+### 2. Sampling
+
+For datasets exceeding 50,000 rows, the engine samples the first 50K records:
+
+```typescript
+// From rule-executor.ts:140-144
+const sampled =
+    normalized.length > config.sampleLimit
+        ? normalized.slice(0, config.sampleLimit)
+        : normalized;
+```
+
+### 3. Rule Routing
+
+Rules are routed by their `type` field:
+
+```typescript
+// From in-memory-backend.ts:89-100
+execute(rule: Rule, records: NormalizedRecord[], temporalScale: number): ViolationResult[] {
+    const isWindowed = (WINDOWED_RULE_TYPES as readonly string[]).includes(rule.type);
+
+    if (isWindowed) {
+        return this.executeWindowed(rule, records, temporalScale);
+    } else {
+        return this.executeSingleTx(rule, records);
+    }
+}
+```
+
+See [Rule Types](/engine/rule-types) for details on each type.
+
+### 4. Condition Evaluation
+
+All rules use a recursive condition evaluator that supports nested `AND`/`OR` logic:
+
+```typescript
+// From in-memory-backend.ts:132-152
+private evaluateLogic(cond: any, record: NormalizedRecord): boolean {
+    // Guard: skip primitives
+    if (cond === null || cond === undefined || typeof cond !== 'object') {
+        return false;
+    }
+
+    // Handle recursive compound conditions
+    if ('AND' in cond && Array.isArray(cond.AND)) {
+        return (cond.AND as any[]).every(c => this.evaluateLogic(c, record));
+    }
+    if ('OR' in cond && Array.isArray(cond.OR)) {
+        return (cond.OR as any[]).some(c => this.evaluateLogic(c, record));
+    }
+    
+    // Handle simple condition
+    if ('field' in cond) {
+        return this.checkSingleCondition(cond as any, record);
+    }
+    
+    return false;
+}
+```
+
+### 5. Confidence Scoring
+
+Each violation receives a confidence score (0–1) based on multiple factors:
+
+```typescript
+// From rule-executor.ts:177-181
+const scoredViolations = finalRuleViolations.map(v => ({
+    ...v,
+    confidence: calculateConfidence(v, rule, metadata)
+}));
+```
+
+See [Confidence Scoring](/engine/confidence-scoring) for the full formula.
+
+### 6. Ranking
+
+Violations are sorted by confidence before being returned:
+
+```typescript
+// From rule-executor.ts:189-192
+const rankedViolations = violations.sort((a, b) =>
+    (b.confidence || 0) - (a.confidence || 0)
+);
+```
+
+## Noise Gate
+
+To prevent system overload, the engine caps stored violations per rule:
+
+```typescript
+// From rule-executor.ts:167-173
+const VIOLATION_CAP = 1000;
+let finalRuleViolations = ruleViolations;
+
+if (ruleViolations.length > VIOLATION_CAP) {
+    console.warn(`[EXECUTOR] Rule ${rule.rule_id} is too noisy (${ruleViolations.length} hits). Storing top ${VIOLATION_CAP}.`);
+    finalRuleViolations = ruleViolations.slice(0, VIOLATION_CAP);
+}
+```
+
+The **true violation count** is tracked separately for accurate compliance scoring.
+
+## Key Design Principles
+
+### Deterministic Enforcement
+
+No ML models in the critical path. Rules are pure boolean logic evaluated against each record. This ensures:
+- **Reproducibility**: Same input → same output
+- **Audit-readiness**: Every decision is traceable
+- **No drift**: Model retraining never changes past results
+
+### Explainability by Default
+
+Every violation includes:
+- The exact policy excerpt it violates
+- Evidence from your data
+- A deterministic explanation (template-generated, not LLM)
+
+See [Explainability](/engine/explainability) for details.
+
+### Signal Specificity Framework
+
+Rules extracted from PDFs must combine multiple signals (behavioral + temporal + relational) to reach a minimum specificity threshold of **2.0** before they can fire. Single-threshold rules are rejected to minimize false positives.
+
+### Bayesian Feedback Loop
+
+When you approve or dismiss a violation, that feedback updates a per-rule precision model:
+
+```
+precision = (1 + TP) / (2 + TP + FP)
+```
+
+Rules that produce false positives lose confidence over time. See [Bayesian Feedback](/engine/bayesian-feedback).
+
+## Implementation
+
+The rule engine is implemented in two core files:
+
+- **`rule-executor.ts`** (`/home/daytona/workspace/source/src/lib/engine/rule-executor.ts:1`): Orchestration layer
+- **`in-memory-backend.ts`** (`/home/daytona/workspace/source/src/lib/engine/in-memory-backend.ts:1`): Execution backend
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Rule Types" icon="layer-group" href="/engine/rule-types">
+    Learn about WINDOWED vs SINGLE-TX rules
+  </Card>
+  <Card title="Operators" icon="code" href="/engine/operators">
+    Supported operators and type coercion
+  </Card>
+  <Card title="Confidence Scoring" icon="chart-line" href="/engine/confidence-scoring">
+    How violations are scored and ranked
+  </Card>
+  <Card title="Explainability" icon="file-lines" href="/engine/explainability">
+    Deterministic violation explanations
+  </Card>
+</CardGroup>

@@ -1,0 +1,255 @@
+---
+title: 'Create Audit'
+api: 'POST /api/audits'
+description: 'Create a new compliance audit with a prebuilt policy pack (AML, GDPR, or SOC2)'
+---
+
+## Endpoint
+
+```
+POST /api/audits
+```
+
+## Authentication
+
+Requires a valid JWT token in the `Authorization` header or authenticated session cookies.
+
+See [Authentication](/api/authentication) for details.
+
+## Request Body
+
+<ParamField body="name" type="string" required>
+  The name of the audit (e.g., "Q4 2024 SOC2 Audit")
+</ParamField>
+
+<ParamField body="policy_type" type="string" required>
+  The prebuilt policy pack to use. Must be one of:
+  - `aml` - Anti-Money Laundering rules
+  - `gdpr` - General Data Protection Regulation rules
+  - `soc2` - SOC 2 compliance rules
+</ParamField>
+
+<ParamField body="selected_categories" type="string[]" optional>
+  Array of category names to filter rules. If provided, only rules matching these categories will be included in the audit.
+  
+  Example: `["Access Control", "Encryption"]`
+</ParamField>
+
+## Response
+
+<ResponseField name="audit_id" type="string">
+  Unique identifier for the created audit session (UUID v4)
+</ResponseField>
+
+<ResponseField name="policy_id" type="string">
+  Database ID of the created policy record (UUID v4)
+</ResponseField>
+
+<ResponseField name="rules" type="Rule[]">
+  Array of compliance rules loaded from the selected policy pack
+  
+  <Expandable title="Rule object properties">
+    <ResponseField name="rule_id" type="string">
+      Unique rule identifier
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Human-readable rule name
+    </ResponseField>
+    
+    <ResponseField name="type" type="string">
+      Rule type (e.g., "threshold", "pattern", "anomaly")
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Rule description and context
+    </ResponseField>
+    
+    <ResponseField name="threshold" type="number" optional>
+      Numeric threshold for threshold-based rules
+    </ResponseField>
+    
+    <ResponseField name="time_window" type="string" optional>
+      Time window for temporal rules (e.g., "24h", "7d")
+    </ResponseField>
+    
+    <ResponseField name="severity" type="string">
+      Rule severity level: "low", "medium", "high", or "critical"
+    </ResponseField>
+    
+    <ResponseField name="conditions" type="object" optional>
+      Additional rule conditions as key-value pairs
+    </ResponseField>
+    
+    <ResponseField name="policy_excerpt" type="string" optional>
+      Relevant excerpt from the policy document
+    </ResponseField>
+    
+    <ResponseField name="policy_section" type="string" optional>
+      Section reference in the original policy document
+    </ResponseField>
+    
+    <ResponseField name="category" type="string" optional>
+      Rule category for filtering and organization
+    </ResponseField>
+    
+    <ResponseField name="historical_context" type="string" optional>
+      Historical context or rationale for the rule
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X POST https://your-domain.com/api/audits \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Q4 2024 SOC2 Compliance Audit",
+    "policy_type": "soc2",
+    "selected_categories": ["Access Control", "Encryption"]
+  }'
+```
+
+```typescript JavaScript
+const { data: { session } } = await supabase.auth.getSession();
+
+const response = await fetch('/api/audits', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${session.access_token}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    name: 'Q4 2024 SOC2 Compliance Audit',
+    policy_type: 'soc2',
+    selected_categories: ['Access Control', 'Encryption'],
+  }),
+});
+
+const data = await response.json();
+console.log('Audit created:', data.audit_id);
+console.log('Loaded rules:', data.rules.length);
+```
+
+## Example Response
+
+```json 201 Created
+{
+  "audit_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "policy_id": "a1b2c3d4-e5f6-7890-ab12-cd34ef567890",
+  "rules": [
+    {
+      "rule_id": "soc2-ac-001",
+      "name": "Multi-Factor Authentication Required",
+      "type": "boolean",
+      "description": "All user accounts must have MFA enabled",
+      "severity": "high",
+      "category": "Access Control",
+      "policy_excerpt": "The organization shall require multi-factor authentication for all system access.",
+      "policy_section": "CC6.1",
+      "conditions": {
+        "mfa_enabled": true
+      }
+    },
+    {
+      "rule_id": "soc2-enc-001",
+      "name": "Data Encryption at Rest",
+      "type": "boolean",
+      "description": "All sensitive data must be encrypted at rest",
+      "severity": "critical",
+      "category": "Encryption",
+      "policy_excerpt": "Sensitive data shall be encrypted using industry-standard algorithms.",
+      "policy_section": "CC6.7",
+      "conditions": {
+        "encryption_enabled": true,
+        "algorithm": "AES-256"
+      }
+    }
+  ]
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error code identifying the type of error
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="object" optional>
+  Additional error details (for validation errors)
+</ResponseField>
+
+### 400 Validation Error
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid request body",
+  "details": [
+    {
+      "path": ["policy_type"],
+      "message": "Invalid enum value. Expected 'aml' | 'gdpr' | 'soc2'"
+    }
+  ]
+}
+```
+
+### 401 Unauthorized
+
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Not authenticated — no valid session found"
+}
+```
+
+### 500 Internal Error
+
+```json
+{
+  "error": "INTERNAL_ERROR",
+  "message": "Failed to create policy"
+}
+```
+
+## Implementation Details
+
+### Database Operations
+
+The endpoint performs the following operations:
+
+1. **Validates request** using `CreateAuditSchema` (Zod validation)
+2. **Authenticates user** via `getUserIdFromRequest()`
+3. **Loads policy pack** based on `policy_type` (AML, GDPR, or SOC2)
+4. **Filters rules** by `selected_categories` if provided
+5. **Creates policy record** in the `policies` table
+6. **Inserts rules** into the `rules` table with enriched metadata
+7. **Returns audit session** with audit ID, policy ID, and rule array
+
+### Row-Level Security
+
+All database operations respect RLS policies:
+
+- `policies` table: `user_id = auth.uid()`
+- `rules` table: Filtered by `policy_id` owned by the authenticated user
+
+<Info>
+Custom PDF-based policies are handled by separate endpoints:
+- `/api/policies/ingest` - Extract rules from PDF documents
+- `/api/policies/generate-rules` - Generate rules using AI
+
+This endpoint only supports prebuilt policy packs.
+</Info>
+
+## Notes
+
+- The `audit_id` is a logical session identifier, not stored in the database (MVP design)
+- Rule descriptions are enriched with `historical_context` metadata stored as JSON
+- All rules are set to `is_active: true` by default
+- Policy status is set to `active` and type to `prebuilt`
