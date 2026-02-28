@@ -1,0 +1,180 @@
+{
+  "projectType": "saas",
+  "projectName": "Yggdrasil",
+  "projectDescription": "Autonomous policy-to-data compliance engine with explainable violations traced to policy clauses",
+  "theme": "aspen",
+  "primaryColor": "#1E40AF",
+  "lightColor": "#60A5FA",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "how-it-works",
+              "key-features"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "quickstart",
+              "installation",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/policy-upload",
+              "features/data-upload",
+              "features/column-mapping",
+              "features/compliance-scanning",
+              "features/violation-review",
+              "features/pii-detection",
+              "features/remediation"
+            ]
+          },
+          {
+            "group": "Policy Frameworks",
+            "pages": [
+              "frameworks/overview",
+              "frameworks/aml",
+              "frameworks/gdpr",
+              "frameworks/soc2",
+              "frameworks/custom-pdf"
+            ]
+          },
+          {
+            "group": "Rule Engine",
+            "pages": [
+              "engine/architecture",
+              "engine/rule-types",
+              "engine/operators",
+              "engine/confidence-scoring",
+              "engine/explainability",
+              "engine/bayesian-feedback"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/audit-workflow",
+              "guides/rule-management",
+              "guides/interpreting-violations",
+              "guides/exporting-reports"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Audits",
+            "pages": [
+              "api/audits/create-audit"
+            ]
+          },
+          {
+            "group": "Policies",
+            "pages": [
+              "api/policies/ingest-pdf",
+              "api/policies/load-prebuilt",
+              "api/policies/list-rules",
+              "api/policies/manage-rules"
+            ]
+          },
+          {
+            "group": "Data Management",
+            "pages": [
+              "api/data/upload-csv",
+              "api/data/confirm-mapping",
+              "api/data/pii-scan"
+            ]
+          },
+          {
+            "group": "Scanning",
+            "pages": [
+              "api/scan/run-scan",
+              "api/scan/get-status",
+              "api/scan/scan-history"
+            ]
+          },
+          {
+            "group": "Violations",
+            "pages": [
+              "api/violations/list-violations",
+              "api/violations/get-violation",
+              "api/violations/review-violation",
+              "api/violations/generate-remediation",
+              "api/violations/list-cases"
+            ]
+          },
+          {
+            "group": "Compliance",
+            "pages": [
+              "api/compliance/get-score",
+              "api/compliance/export-report",
+              "api/compliance/validate"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Schema",
+            "pages": [
+              "database/overview",
+              "database/policies-table",
+              "database/rules-table",
+              "database/scans-table",
+              "database/violations-table",
+              "database/pii-findings-table"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Deterministic rule engine with no ML in enforcement loop",
+    "PDF policy extraction with AI-powered rule generation",
+    "Explainable violations with policy excerpts and evidence",
+    "Bayesian feedback loop for improving rule precision",
+    "Signal Specificity Framework for minimizing false positives",
+    "PII detection and privacy compliance",
+    "Prebuilt frameworks for AML, GDPR, and SOC2",
+    "Column mapping with AI-suggested schema detection"
+  ],
+  "publicApiSurface": [
+    "POST /api/audits",
+    "POST /api/policies/ingest",
+    "POST /api/policies/prebuilt",
+    "POST /api/data/upload",
+    "POST /api/data/mapping/confirm",
+    "POST /api/data/pii-scan",
+    "POST /api/scan/run",
+    "GET /api/scan/{id}",
+    "GET /api/violations",
+    "GET /api/violations/{id}",
+    "PATCH /api/violations/{id}",
+    "POST /api/violations/{id}/remediation",
+    "GET /api/violations/cases",
+    "GET /api/compliance/score",
+    "GET /api/export",
+    "POST /api/validate"
+  ]
+}
